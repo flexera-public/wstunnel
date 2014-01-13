@@ -1,4 +1,4 @@
-// Copyright (c) 2013 Thorsten von Eicken
+// Copyright (c) 2014 RightScale, Inc. - see LICENSE
 
 // Websockets tunnel client, which runs at the HTTP server end (yes, I know, it's confusing)
 // This client connects to a websockets tunnel server and waits to receive HTTP requests

@@ -1,4 +1,4 @@
-// Copyright (c) 2013 Thorsten von Eicken
+// Copyright (c) 2014 RightScale, Inc. - see LICENSE
 
 package main
 

@@ -1,0 +1,12 @@
+# Configuration for wstuncli - place in /etc/default/wstuncli on Ubuntu
+
+# Rendez-vous token: the HTTP client at the other end needs to use the same token to rendez-vous
+# with the client running here. Use something secret!
+TOKEN=
+
+# Local server to which HTTP requests are forwarded, this is the web server to which requests
+# are being tunneled. Currently only http is supported (not https).
+SERVER=http://localhost
+
+# Remote websockets tunnel endpoint to which this client connects to
+TUNNEL=wss://wstunsrv.example.com
