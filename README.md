@@ -70,7 +70,7 @@ try it out):
  - `wstun.example.com` will be outside the firewall running the tunnel server
  - `client.example.com` will be outside the firewall wanting to make HTTP requests to `www.example.com` through the tunnel
 
-.h3 Set-up tunnel server
+### Set-up tunnel server
 
 On `wstun.example.com` start wstunsrv (I'll pick a port other than 80 for sake of example)
 
@@ -81,7 +81,7 @@ On `wstun.example.com` start wstunsrv (I'll pick a port other than 80 for sake o
     WSTUNSRV RUNNING
     $ 
 
-.h3 Start tunnel
+### Start tunnel
 
 On `www.example.com` verify that you can access the local web site:
 
@@ -94,7 +94,7 @@ Now set-up the tunnel:
     $ ./wstuncli -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
     2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 
-.h3 Make a request through the tunnel
+### Make a request through the tunnel
 
 On `client.example.com` use curl to make a request to the web server running on `www.example.com`:
 
@@ -103,7 +103,7 @@ On `client.example.com` use curl to make a request to the web server running on 
     $ curl '-HX-Token:my_b!g_$secret' https://wstun.example.com:8080/some/web/page
     <html> .......
 
-.h3 Using Secure Web Sockets (SSL)
+### Using Secure Web Sockets (SSL)
 
 Wstunsrv does not support SSL natively (although that would not be a big change). The recommended
 approach for using WSS (web sockets through SSL) is to use nginx, which uses the well-hardened
