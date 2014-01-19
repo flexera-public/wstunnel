@@ -110,6 +110,7 @@ func main() {
         http.HandleFunc("/", payloadHeaderHandler)
         http.HandleFunc("/_token/", payloadPrefixHandler)
         http.HandleFunc("/_tunnel", tunnelHandler)
+        http.HandleFunc("/_health_check", checkHandler)
 
         // Now create the HTTP server and let it do its thing
         log.Printf("Listening on port %d\n", *port)
@@ -118,6 +119,11 @@ func main() {
 }
 
 //===== Handlers =====
+
+// Handler for health check
+func checkHandler(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprintln(w, "WSTUNSRV RUNNING")
+}
 
 // Handler for payload requests with the token in the Host header
 func payloadHeaderHandler(w http.ResponseWriter, r *http.Request) {
