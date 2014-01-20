@@ -68,14 +68,17 @@ You will want to have 3 machines handy (although you could run everything on one
 try it out):
  - `www.example.com` will be behind a firewall running a simple web site on port 80
  - `wstun.example.com` will be outside the firewall running the tunnel server
- - `client.example.com` will be outside the firewall wanting to make HTTP requests to `www.example.com` through the tunnel
+ - `client.example.com` will be outside the firewall wanting to make HTTP requests to
+   `www.example.com` through the tunnel
+
+If yo don't have it locally, you will need to fetch Gorilla Web Sockets: `go get github.com/gorilla/websocket`
 
 .h3 Set-up tunnel server
 
 On `wstun.example.com` start wstunsrv (I'll pick a port other than 80 for sake of example)
 
     $ go build wstunsrv.go ws.go
-    $ ./wstunsrv -p 8080 &
+    $ ./wstunsrv -port 8080 &
     2014/01/19 09:51:31 Listening on port 8080
     $ curl https://localhost:8080/_health_check
     WSTUNSRV RUNNING
@@ -90,7 +93,7 @@ On `www.example.com` verify that you can access the local web site:
 
 Now set-up the tunnel:
 
-    $ go build wstuncli.go ws.go
+    $ go build wstuncli.go
     $ ./wstuncli -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
     2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 
