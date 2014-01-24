@@ -9,14 +9,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"io"
 	"os"
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
-	"net/textproto"
 	"net/url"
         _ "net/http/pprof"
 )
@@ -248,8 +247,31 @@ func MakeRequest(r *http.Request) *RemoteRequest {
 
 }
 
+// censoredHeaders, these are removed from the response before forwarding
+var censoredHeaders = []string{
+        "Connection",
+        "Keep-Alive",
+        "Te", // canonicalized version of "TE"
+        "Trailers",
+        "Transfer-Encoding",
+}
+
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func WriteResponse(w http.ResponseWriter, resp *bytes.Buffer) {
+func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) {
+        resp, err := http.ReadResponse(bufio.NewReader(buf), nil)
+        if err != nil {
+                log.Printf("WriteResponse: can't parse incoming response: %s", err)
+                w.WriteHeader(506)
+                return
+        }
+        for _, h := range censoredHeaders {
+                resp.Header.Del(h)
+        }
+        // write the response
+        copyHeader(w.Header(), resp.Header)
+        w.WriteHeader(resp.StatusCode)
+        io.Copy(w, resp.Body)
+/*
         head, err := resp.ReadString(0xA)
         heads := strings.SplitN(head, " ", 3)
         if len(heads) != 3 {
@@ -273,6 +295,7 @@ func WriteResponse(w http.ResponseWriter, resp *bytes.Buffer) {
         w.WriteHeader(statusCode)
         buf.WriteTo(w)
         return
+*/
 }
 
 // copy http headers over

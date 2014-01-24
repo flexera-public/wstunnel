@@ -26,7 +26,7 @@ package main
 import (
         "bufio"
         "bytes"
-        "crypto/tls"
+        //"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -209,27 +209,61 @@ func pinger(ws *websocket.Conn) {
         ws.Close()
 }
 
+//===== HTTP Header Stuff =====
+
+func copyHeader(dst, src http.Header) {
+        for k, vv := range src {
+                for _, v := range vv {
+                        dst.Add(k, v)
+                }
+        }
+}
+
+// Hop-by-hop headers. These are removed when sent to the backend.
+// http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
+var hopHeaders = []string{
+        "Connection",
+        "Keep-Alive",
+        "Proxy-Authenticate",
+        "Proxy-Authorization",
+        "Te", // canonicalized version of "TE"
+        "Trailers",
+        "Transfer-Encoding",
+        "Upgrade",
+        "Host",
+}
+
 //===== HTTP driver and response sender =====
 
 var wsWriterMutex sync.Mutex    // mutex to allow a single goroutine to send a response at a time
 
 func finishRequest(ws *websocket.Conn, id int16, req *http.Request) {
         log.Printf("WS #%d: %s %s\n", id, req.Method, req.RequestURI)
-        // Issue the request to the HTTP server
+        // Construct the URL for the outgoing request
         var err error
         req.URL, err = url.Parse(fmt.Sprintf("%s%s", *server, req.RequestURI))
         if err != nil {
                 log.Printf("handleWsRequests: cannot parse requestURI: %s", err.Error())
                 return
         }
-        log.Printf("handleWsRequests: issuing request to %s", req.URL.String())
         req.RequestURI = ""
-        tr := &http.Transport{
-                TLSClientConfig: &tls.Config{
-                        InsecureSkipVerify : true,
-                },
+        log.Printf("handleWsRequests: issuing request to %s", req.URL.String())
+
+        // Accept self-signed certs
+        //tr := &http.Transport{
+        //        TLSClientConfig: &tls.Config{
+        //                InsecureSkipVerify : true,
+        //        },
+        //}
+        // Issue the request to the HTTP server
+        //client := http.Client{Transport: tr}
+
+        // Remove hop-by-hop headers
+        for _, h := range hopHeaders {
+                req.Header.Del(h)
         }
-        client := http.Client{Transport: tr}
+        // Issue the request to the HTTP server
+        client := http.Client{}
         resp, err := client.Do(req)
         if err != nil {
                 log.Printf("handleWsRequests: request error: %s\n", err.Error())
@@ -243,6 +277,7 @@ func finishRequest(ws *websocket.Conn, id int16, req *http.Request) {
         } else {
                 log.Printf("handleWsRequests: got %s\n", resp.Status)
         }
+        defer resp.Body.Close()
         // Get writer's lock
         wsWriterMutex.Lock()
         defer wsWriterMutex.Unlock()
@@ -255,6 +290,7 @@ func finishRequest(ws *websocket.Conn, id int16, req *http.Request) {
                 ws.Close()
                 return
         }
+
         // write the request Id
         _, err = fmt.Fprintf(w, "%04x", id)
         if err != nil {
@@ -262,6 +298,7 @@ func finishRequest(ws *websocket.Conn, id int16, req *http.Request) {
                 ws.Close()
                 return
         }
+
         // write the response itself
         err = resp.Write(w)
         if err != nil {
@@ -269,6 +306,7 @@ func finishRequest(ws *websocket.Conn, id int16, req *http.Request) {
                 ws.Close()
                 return
         }
+
         // done
         err = w.Close()
         if err != nil {
