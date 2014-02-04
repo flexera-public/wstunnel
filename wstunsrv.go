@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/syslog"
 	"io"
 	"os"
 	"net/http"
@@ -26,6 +27,9 @@ var port *int = flag.Int("port", 80, "port for http/ws server to listen on")
 var pidf *string = flag.String("pidfile", "", "path for pidfile")
 var logf *string = flag.String("logfile", "", "path for log file")
 var tout *int    = flag.Int("timeout", 30, "timeout on websocket in seconds")
+var slog *string = flag.String("syslog", "", "syslog facility to log to")
+var key1 *string = flag.String("k1", "", "key to be presented by wstuncli")
+var key2 *string = flag.String("k2", "", "alternate key to be presented by wstuncli")
 var wsTimeout time.Duration
 
 var RetryError = errors.New("Error sending request, please retry")
@@ -85,6 +89,18 @@ func main() {
                 f.Close()
         }
 
+        if *slog != "" {
+                log.Printf("Switching logging to syslog %s", *slog)
+                if *logf != "" {
+                        log.Fatal("Can't log to syslog and logfile simultaneously")
+                }
+                f, err := syslog.New(syslog.LOG_INFO, *slog)
+                if err != nil {
+                        log.Fatalf("Can't connect to syslog")
+                }
+                log.SetOutput(f)
+                log.Printf("Started logging here")
+        }
         if *logf != "" {
                 log.Printf("Switching logging to %s", *logf)
                 f, err := os.OpenFile(*logf, os.O_APPEND + os.O_WRONLY + os.O_CREATE, 0664)
@@ -93,6 +109,9 @@ func main() {
                 }
                 log.SetOutput(f)
                 log.Printf("Started logging here")
+        }
+        if *key1 == "" || *key2 == "" {
+                log.Printf("Warning: wstuncli can connect without a key")
         }
 
         if *tout < 3 {
@@ -114,7 +133,12 @@ func main() {
         // Now create the HTTP server and let it do its thing
         log.Printf("Listening on port %d\n", *port)
         laddr := fmt.Sprintf(":%d", *port)
-        log.Fatal(http.ListenAndServe(laddr, nil))
+        server := http.Server{
+                Addr: laddr,
+                ReadTimeout: 3*time.Minute,
+                WriteTimeout: 3*time.Minute,
+        }
+        log.Fatal(server.ListenAndServe())
 }
 
 //===== Handlers =====
@@ -152,34 +176,44 @@ func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
 
 // Handler for payload requests with the token already sorted out
 func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
-        log.Printf("HTTP->%s: %s %s\n", token, r.Method, r.URL)
 
         // get a hold of the remote server
         rs := GetRemoteServer(Token(token))
 
         // create the request object
         req := MakeRequest(r)
-        req.token = Token(token)
+        req.token = token
+        log_token := CutToken(token)
+
+        log.Printf("HTTP->%s: %s %s\n", log_token, r.Method, r.URL)
 
         // repeatedly try to get a response
-        for {
+        Tries:
+        for tries := 3; tries > 0; tries -= 1 {
                 // enqueue request
                 rs.AddRequest(req)
                 // wait for response
-                resp := <-req.replyChan
-                // if there's no error just respond
-                if resp.err == nil {
-                        log.Printf("HTTP<-%s\n", token)
-                        WriteResponse(w, resp.response)
-                        break
+                select {
+                case resp := <-req.replyChan:
+                        // if there's no error just respond
+                        if resp.err == nil {
+                                code := WriteResponse(w, resp.response)
+                                log.Printf("HTTP<-%s status=%d\n", log_token, code)
+                                break Tries
+                        }
+                        // if it's a non-retryable error then write the error
+                        if resp.err != RetryError {
+                                log.Printf("HTTP<-%s error=%s\n", resp.err.Error())
+                                http.Error(w, resp.err.Error(), 504)
+                                break Tries
+                        }
+                        // else we're gonna retry
+                        log.Printf("HTTP->%s: retrying %s %s\n", token, r.Method, r.URL)
+                case <-time.After(3*time.Minute):
+                        log.Printf("HTTP<-%s timeout", log_token)
+                        http.Error(w, "Tunnel timeout", 504)
+                        break Tries
                 }
-                // if it's a non-retryable error then write the error
-                if resp.err != RetryError {
-                        log.Printf("HTTP<-%s: %s\n", resp.err.Error())
-                        http.Error(w, resp.err.Error(), 504)
-                        break
-                }
-                // else we're gonna retry
         }
 
         // Retire the request, since we've responded...
@@ -189,13 +223,25 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 // Handler for tunnel establishment requests
 func tunnelHandler(w http.ResponseWriter, r *http.Request) {
         if r.Method == "GET" {
-                wsHandler(w, r)
+                key := r.Header.Get("X-Key")
+                if key == *key1 || key == *key2 {
+                        wsHandler(w, r)
+                } else {
+                        http.Error(w, "Missing or invalid key", 403)
+                }
         } else {
+                http.Error(w, "Only GET requests are supported", 400)
                 //lpHandler(w, r)
         }
 }
 
 //===== Helpers =====
+
+// Sanitize the token for logging
+var cutRe = regexp.MustCompile("[^_]{16}==$")
+func CutToken(token Token) string {
+        return cutRe.ReplaceAllString(string(token), "...")
+}
 
 func GetRemoteServer(token Token) *RemoteServer {
         serverRegistryMutex.Lock()
@@ -239,7 +285,7 @@ func MakeRequest(r *http.Request) *RemoteRequest {
         _ = r.Write(buf)
         return &RemoteRequest{
                 id: -1,
-                info: r.Method + " " + r.RequestURI,
+                info: r.Method + " " + r.URL.String(),
                 buffer: buf,
                 replyChan: make(chan ResponseBuffer, 10),
                 deadline: time.Now().Add(3*time.Minute),
@@ -257,12 +303,12 @@ var censoredHeaders = []string{
 }
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) {
+func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
         resp, err := http.ReadResponse(bufio.NewReader(buf), nil)
         if err != nil {
                 log.Printf("WriteResponse: can't parse incoming response: %s", err)
                 w.WriteHeader(506)
-                return
+                return 506
         }
         for _, h := range censoredHeaders {
                 resp.Header.Del(h)
@@ -271,31 +317,7 @@ func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) {
         copyHeader(w.Header(), resp.Header)
         w.WriteHeader(resp.StatusCode)
         io.Copy(w, resp.Body)
-/*
-        head, err := resp.ReadString(0xA)
-        heads := strings.SplitN(head, " ", 3)
-        if len(heads) != 3 {
-                log.Printf("WriteResponse: response heading has only %d fields", len(heads))
-                w.WriteHeader(506)
-                return
-        }
-        statusCode, _ := strconv.Atoi(heads[1])
-
-        // Parse the header from the response text
-        buf := bufio.NewReader(resp)
-        header, err := textproto.NewReader(buf).ReadMIMEHeader()
-        if (err != nil) {
-                log.Printf("WriteResponse: bad response header: %s", err.Error())
-                w.WriteHeader(506)
-                return
-        }
-        log.Printf("HTTP<-%d %s bytes %s", statusCode, header.Get("content-length"),
-                header.Get("content-type"))
-        copyHeader(w.Header(), http.Header(header))
-        w.WriteHeader(statusCode)
-        buf.WriteTo(w)
-        return
-*/
+        return resp.StatusCode
 }
 
 // copy http headers over

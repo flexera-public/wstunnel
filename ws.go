@@ -36,7 +36,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
                         r.RemoteAddr), 400)
                 return
         }
-        log.Printf("WS connection from %s (%s)", token, r.RemoteAddr)
+        log.Printf("WS connection from %s (%s)", CutToken(Token(token)), r.RemoteAddr)
         // Upgrade to web sockets
         ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
         if _, ok := err.(websocket.HandshakeError); ok {
@@ -82,6 +82,7 @@ func wsSetPingHandler(ws *websocket.Conn) {
 func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
         var req *RemoteRequest
         var err error
+        log_token := CutToken(rs.token)
         for {
                 // fetch a request
                 select {
@@ -89,7 +90,7 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
                         // awesome...
                 case _ = <-ch:
                         // time to close shop
-                        log.Printf("WS->%s closing on signal\n", rs.token)
+                        log.Printf("WS->%s closing on signal\n", log_token)
                         ws.Close()
                         return
                 }
@@ -117,11 +118,11 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
                 if err != nil {
                         break
                 }
-                log.Printf("WS->%s#%d %s\n", req.token, req.id, req.info)
+                log.Printf("WS->%s#%d %s\n", log_token, req.id, req.info)
         }
         // tell the sender to retry the request
         req.replyChan <- ResponseBuffer{ err: RetryError }
-        log.Printf("WS->%s#%d retry\n", req.token, req.id)
+        log.Printf("WS->%s#%d retry\n", log_token, req.id)
         // close up shop
         ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))
         time.Sleep(2*time.Second)
@@ -131,6 +132,7 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 // Read responses from the tunnel and fulfill pending requests
 func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
         var err error
+        log_token := CutToken(rs.token)
         // continue reading until we get an error
         for {
                 ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
@@ -151,7 +153,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
                 if err != nil {
                         break
                 }
-                log.Printf("WS<-%s#%d\n", rs.token, id)
+                log.Printf("WS<-%s#%d\n", log_token, id)
                 // read request itself
                 buf, err := ioutil.ReadAll(r)
                 if err != nil {
@@ -169,15 +171,15 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
                         case req.replyChan <- rb:
                                 // great!
                         default:
-                                log.Printf("WS<-%s#d: can't enqueue response\n", rs.token, id)
+                                log.Printf("WS<-%s#d: can't enqueue response\n", log_token, id)
                         }
                 } else {
-                        log.Printf("WS<-%s#%d: orphan response\n", rs.token, id)
+                        log.Printf("WS<-%s#%d: orphan response\n", log_token, id)
                 }
         }
         // print error message
         if err != nil {
-                log.Printf("WS<-%s: %s -- closing\n", rs.token, err.Error())
+                log.Printf("WS<-%s: %s -- closing\n", log_token, err.Error())
         }
         // close up shop
         ch <- 0 // notify sender
