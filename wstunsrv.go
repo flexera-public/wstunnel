@@ -26,7 +26,8 @@ var _ fmt.Formatter
 var port *int = flag.Int("port", 80, "port for http/ws server to listen on")
 var pidf *string = flag.String("pidfile", "", "path for pidfile")
 var logf *string = flag.String("logfile", "", "path for log file")
-var tout *int    = flag.Int("timeout", 30, "timeout on websocket in seconds")
+var tout *int    = flag.Int("wstimeout", 30, "timeout on websocket in seconds")
+var httpTout *int= flag.Int("httptimeout", 180, "timeout for http requests in seconds")
 var slog *string = flag.String("syslog", "", "syslog facility to log to")
 var key1 *string = flag.String("k1", "", "key to be presented by wstuncli")
 var key2 *string = flag.String("k2", "", "alternate key to be presented by wstuncli")
@@ -185,13 +186,24 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
         req.token = token
         log_token := CutToken(token)
 
-        log.Printf("HTTP->%s: %s %s\n", log_token, r.Method, r.URL)
+        addr := r.Header.Get("X-Forwarded-For")
+        if addr == "" {
+                addr = r.RemoteAddr
+        }
+        log.Printf("HTTP->%s: %s %s (%s)\n", log_token, r.Method, r.URL, addr)
+        //log.Printf("HTTP->%s: %s %s tout=%s\n", log_token, r.Method, r.URL,
+        //        req.deadline.Format(time.RFC1123Z))
 
         // repeatedly try to get a response
         Tries:
         for tries := 3; tries > 0; tries -= 1 {
                 // enqueue request
-                rs.AddRequest(req)
+                err := rs.AddRequest(req)
+                if err != nil {
+                        log.Printf("HTTP<-%s error: %s", log_token, err.Error())
+                        http.Error(w, err.Error(), 504)
+                        break Tries
+                }
                 // wait for response
                 select {
                 case resp := <-req.replyChan:
@@ -203,13 +215,13 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
                         }
                         // if it's a non-retryable error then write the error
                         if resp.err != RetryError {
-                                log.Printf("HTTP<-%s error=%s\n", resp.err.Error())
+                                log.Printf("HTTP<-%s error=%s\n", log_token, resp.err.Error())
                                 http.Error(w, resp.err.Error(), 504)
                                 break Tries
                         }
                         // else we're gonna retry
-                        log.Printf("HTTP->%s: retrying %s %s\n", token, r.Method, r.URL)
-                case <-time.After(3*time.Minute):
+                        log.Printf("HTTP->%s: retrying %s %s\n", log_token, r.Method, r.URL)
+                case <-time.After(time.Duration(*httpTout) * time.Second):
                         log.Printf("HTTP<-%s timeout", log_token)
                         http.Error(w, "Tunnel timeout", 504)
                         break Tries
@@ -262,7 +274,7 @@ func GetRemoteServer(token Token) *RemoteServer {
         return rs
 }
 
-func (rs *RemoteServer) AddRequest(req *RemoteRequest) {
+func (rs *RemoteServer) AddRequest(req *RemoteRequest) error {
         rs.requestSetMutex.Lock()
         defer rs.requestSetMutex.Unlock()
         if req.id < 0 {
@@ -270,7 +282,13 @@ func (rs *RemoteServer) AddRequest(req *RemoteRequest) {
                 req.id = rs.lastId
         }
         rs.requestSet[req.id] = req
-        rs.requestQueue <- req
+        select {
+        case rs.requestQueue <- req:
+          // enqueued!
+          return nil
+        default:
+          return errors.New("Too many requests in-flight")
+        }
 }
 
 func (rs *RemoteServer) RetireRequest(req *RemoteRequest) {
@@ -288,7 +306,7 @@ func MakeRequest(r *http.Request) *RemoteRequest {
                 info: r.Method + " " + r.URL.String(),
                 buffer: buf,
                 replyChan: make(chan ResponseBuffer, 10),
-                deadline: time.Now().Add(3*time.Minute),
+                deadline: time.Now().Add(time.Duration(*httpTout) * time.Second),
         }
 
 }

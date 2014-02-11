@@ -4,6 +4,7 @@ package main
 
 import (
         "bytes"
+        "errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -36,7 +37,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
                         r.RemoteAddr), 400)
                 return
         }
-        log.Printf("WS connection from %s (%s)", CutToken(Token(token)), r.RemoteAddr)
+        addr := r.Header.Get("X-Forwarded-For")
+        if addr == "" {
+                addr = r.RemoteAddr
+        }
+        log.Printf("WS connection from %s (%s)", CutToken(Token(token)), addr)
         // Upgrade to web sockets
         ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
         if _, ok := err.(websocket.HandshakeError); ok {
@@ -95,6 +100,15 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
                         return
                 }
                 //log.Printf("WS->%s#%d start %s\n", req.token, req.id, req.info)
+                // See whether the request has already expired
+                if req.deadline.Before(time.Now()) {
+                        req.replyChan <- ResponseBuffer{
+                                err: errors.New("Timeout before forwarding the request"),
+                        }
+                        log.Printf("WS-<%s#%d timeout (%.0fsecs ago)\n", log_token, req.id,
+                                time.Now().Sub(req.deadline).Seconds())
+                        continue;
+                }
                 // write the request into the tunnel
                 ws.SetWriteDeadline(time.Now().Add(time.Minute))
                 var w io.WriteCloser
