@@ -23,7 +23,7 @@ type Data struct {
         Response        DataResponse    `json:"response"`
 }
 
-var orgNameRe = regexp.MustCompile("Org[^a-zA-Z]?Name[^a-zA-Z]*([:print:]*)")
+var orgNameRe = regexp.MustCompile("Org[^a-zA-Z]?Name[^a-zA-Z]*([ -~]*)")
 
 func Whois(ipAddr, apiToken string) string {
         url := fmt.Sprint("http://api.robowhois.com/v1/whois/", ipAddr, "/parts")
