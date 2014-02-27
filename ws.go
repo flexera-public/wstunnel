@@ -51,12 +51,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
                 httpError(w, err.Error(), 400)
                 return
         }
+        // Get/Create RemoteServer
+        rs := GetRemoteServer(Token(token))
+        rs.remoteAddr = addr
+        rs.lastActivity = time.Now()
         // Set safety limits
         ws.SetReadLimit(100*1024*1024)
         // Start timout handling
-        wsSetPingHandler(ws)
-        // Get/Create RemoteServer
-        rs := GetRemoteServer(Token(token))
+        wsSetPingHandler(ws, rs)
         // Create synchronization channel
         ch := make(chan int, 2)
         // Spawn goroutine to read responses
@@ -65,7 +67,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
         wsWriter(rs, ws, ch)
 }
 
-func wsSetPingHandler(ws *websocket.Conn) {
+func wsSetPingHandler(ws *websocket.Conn, rs *RemoteServer) {
         // timeout handler sends a close message, waits a few seconds, then kills the socket
         timeout := func() {
                 ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
@@ -78,6 +80,8 @@ func wsSetPingHandler(ws *websocket.Conn) {
         ph := func(message string) error {
                 timer.Reset(wsTimeout)
                 ws.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(wsTimeout/3))
+                // update lastActivity
+                rs.lastActivity = time.Now()
                 return nil
         }
         ws.SetPingHandler(ph)
@@ -176,6 +180,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
                 // try to match request
                 rs.requestSetMutex.Lock()
                 req := rs.requestSet[id]
+                rs.lastActivity = time.Now()
                 rs.requestSetMutex.Unlock()
                 // let's see...
                 if req != nil {

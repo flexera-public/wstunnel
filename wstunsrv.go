@@ -14,6 +14,7 @@ import (
 	"os"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -38,7 +39,7 @@ var RetryError = errors.New("Error sending request, please retry")
 //===== Data Structures =====
 
 const (
-        MAX_REQ         = 10                    // max queued requests per remote server
+        MAX_REQ         = 20                    // max queued requests per remote server
 )
 
 type Token string
@@ -53,6 +54,7 @@ type RemoteRequest struct {
         id              int16                   // unique (scope=server) request id
         token           Token                   // rendez-vous token for debug/logging
         info            string                  // http method + uri for debug/logging
+        remoteAddr      string                  // remote address for debug/logging
         buffer          *bytes.Buffer           // request buffer to send
         replyChan       chan ResponseBuffer     // response that got returned, capacity=1!
         deadline        time.Time               // timeout
@@ -62,7 +64,9 @@ type RemoteRequest struct {
 type RemoteServer struct {
         token           Token                   // rendez-vous token for debug/logging
         lastId          int16                   // id of last request
-        requestQueue    chan *RemoteRequest     // queue to be sent
+        lastActivity    time.Time               // last activity on tunnel
+        remoteAddr      string                  // last remote addr of tunnel (debug)
+        requestQueue    chan *RemoteRequest     // queue of requests to be sent
         requestSet      map[int16]*RemoteRequest // all requests in queue/flight indexed by ID
         requestSetMutex sync.Mutex
 }
@@ -100,6 +104,7 @@ func main() {
                         log.Fatalf("Can't connect to syslog")
                 }
                 log.SetOutput(f)
+                log.SetFlags(0) // syslog already has timestamp
                 log.Printf("Started logging here")
         }
         if *logf != "" {
@@ -130,6 +135,7 @@ func main() {
         http.HandleFunc("/_token/", payloadPrefixHandler)
         http.HandleFunc("/_tunnel", tunnelHandler)
         http.HandleFunc("/_health_check", checkHandler)
+        http.HandleFunc("/_stats", statsHandler)
 
         // Now create the HTTP server and let it do its thing
         log.Printf("Listening on port %d\n", *port)
@@ -147,6 +153,35 @@ func main() {
 // Handler for health check
 func checkHandler(w http.ResponseWriter, r *http.Request) {
         fmt.Fprintln(w, "WSTUNSRV RUNNING")
+}
+
+// Handler for stats
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+        // let's start by doing a GC to ensure we reclaim file descriptors (?)
+        runtime.GC()
+        // print out the list of tunnels
+        serverRegistryMutex.Lock()
+        fmt.Fprintf(w, "tunnels=%d\n", len(serverRegistry))
+        i := 0
+        for _, t := range serverRegistry {
+                fmt.Fprintf(w, "tunnel%02d_token=%s\n", i, CutToken(t.token))
+                fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(t.requestSet))
+                fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, t.remoteAddr)
+                if t.lastActivity.IsZero() {
+                        fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i)
+                } else {
+                        fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i,
+                                time.Since(t.lastActivity).Seconds())
+                }
+                if len(t.requestSet) > 0 {
+                        t.requestSetMutex.Lock()
+                        if r, ok := t.requestSet[t.lastId]; ok {
+                                fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr)
+                        }
+                }
+                i += 1
+        }
+        serverRegistryMutex.Unlock()
 }
 
 // Handler for payload requests with the token in the Host header
@@ -186,11 +221,11 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
         req.token = token
         log_token := CutToken(token)
 
-        addr := r.Header.Get("X-Forwarded-For")
-        if addr == "" {
-                addr = r.RemoteAddr
+        req.remoteAddr = r.Header.Get("X-Forwarded-For")
+        if req.remoteAddr == "" {
+                req.remoteAddr = r.RemoteAddr
         }
-        log.Printf("HTTP->%s: %s %s (%s)\n", log_token, r.Method, r.URL, addr)
+        log.Printf("HTTP->%s: %s %s (%s)\n", log_token, r.Method, r.URL, req.remoteAddr)
         //log.Printf("HTTP->%s: %s %s tout=%s\n", log_token, r.Method, r.URL,
         //        req.deadline.Format(time.RFC1123Z))
 
@@ -222,6 +257,7 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
                         // else we're gonna retry
                         log.Printf("HTTP->%s: retrying %s %s\n", log_token, r.Method, r.URL)
                 case <-time.After(time.Duration(*httpTout) * time.Second):
+                        // it timed out...
                         log.Printf("HTTP<-%s timeout", log_token)
                         http.Error(w, "Tunnel timeout", 504)
                         break Tries
