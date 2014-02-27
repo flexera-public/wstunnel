@@ -37,6 +37,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
                         r.RemoteAddr), 400)
                 return
         }
+        if len(token) < *tokLen {
+                httpError(w, fmt.Sprintf("Rendez-vous token is too short (must be %d chars)",
+                        *tokLen), 400)
+                return
+        }
         addr := r.Header.Get("X-Forwarded-For")
         if addr == "" {
                 addr = r.RemoteAddr

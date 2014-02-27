@@ -24,6 +24,7 @@ type Data struct {
 }
 
 var orgNameRe = regexp.MustCompile("Org[^a-zA-Z]?Name[^a-zA-Z]*([ -~]*)")
+var netNameRe = regexp.MustCompile("network:Organization[^a-zA-Z]*([ -~]*)")
 
 func Whois(ipAddr, apiToken string) string {
         url := fmt.Sprint("http://api.robowhois.com/v1/whois/", ipAddr, "/parts")
@@ -52,6 +53,9 @@ func Whois(ipAddr, apiToken string) string {
         //log.Printf("robowhois: %s -> %s", ipAddr, data.Response.Parts[n-1].Body)
 
         match := orgNameRe.FindAllStringSubmatch(data.Response.Parts[n-1].Body, -1)
+        if match == nil {
+                match = netNameRe.FindAllStringSubmatch(data.Response.Parts[n-1].Body, -1)
+        }
         if match == nil {
                 log.Printf("robowhois: can't find OrgName in response for %s", ipAddr)
                 return ""

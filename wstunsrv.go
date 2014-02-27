@@ -32,9 +32,11 @@ var logf *string = flag.String("logfile", "", "path for log file")
 var tout *int    = flag.Int("wstimeout", 30, "timeout on websocket in seconds")
 var httpTout *int= flag.Int("httptimeout", 180, "timeout for http requests in seconds")
 var slog *string = flag.String("syslog", "", "syslog facility to log to")
-var key1 *string = flag.String("k1", "", "key to be presented by wstuncli")
-var key2 *string = flag.String("k2", "", "alternate key to be presented by wstuncli")
+//var key1 *string = flag.String("k1", "", "key to be presented by wstuncli")
+//var key2 *string = flag.String("k2", "", "alternate key to be presented by wstuncli")
 var whoToken *string = flag.String("robowhois", "", "robowhois.com API token")
+var lookup *string = flag.String("lookup", "", "IP address to lookup in robowhois (doesn't run tunnel)")
+var tokLen *int  = flag.Int("tokenlength", 16, "minimum token length")
 var wsTimeout time.Duration
 
 var RetryError = errors.New("Error sending request, please retry")
@@ -109,6 +111,14 @@ func ipAddrLookup(ipAddr string) (dns, whois string) {
 func main() {
 	flag.Parse()
 
+        if *lookup != "" {
+                names, _ := net.LookupAddr(*lookup)
+                fmt.Printf("DNS   %s -> %s\n", *lookup, strings.Join(names, ","))
+                fmt.Printf("WHOIS %s -> %s\n", *lookup, Whois(*lookup, *whoToken))
+                os.Exit(0)
+        }
+
+
         if *pidf != "" {
                 _ = os.Remove(*pidf)
                 pid := os.Getpid()
@@ -145,9 +155,9 @@ func main() {
                 log.SetOutput(f)
                 log.Printf("Started logging here")
         }
-        if *key1 == "" || *key2 == "" {
-                log.Printf("Warning: wstuncli can connect without a key")
-        }
+        //if *key1 == "" || *key2 == "" {
+        //        log.Printf("Warning: wstuncli can connect without a key")
+        //}
 
         if *tout < 3 {
                 *tout = 3
@@ -188,6 +198,7 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 func statsHandler(w http.ResponseWriter, r *http.Request) {
         // let's start by doing a GC to ensure we reclaim file descriptors (?)
         runtime.GC()
+
         // make a copy of the set of remoteServers
         serverRegistryMutex.Lock()
         rss := make([]*RemoteServer, 0, len(serverRegistry))
@@ -195,8 +206,20 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
                 rss = append(rss, rs)
         }
         serverRegistryMutex.Unlock()
-        // print out the list of tunnels
+
+        // print out the number of tunnels
         fmt.Fprintf(w, "tunnels=%d\n", len(serverRegistry))
+
+        // cut off here if not called from localhost
+        addr := r.Header.Get("X-Forwarded-For")
+        if addr == "" {
+                addr = r.RemoteAddr
+        }
+        if !strings.HasPrefix(addr, "127.0.0.1") {
+                fmt.Fprintln(w, "More stats available when called from localhost...")
+                return
+        }
+
         reqPending := 0
         badTunnels := 0
         for i, t := range rss {
@@ -320,12 +343,12 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 // Handler for tunnel establishment requests
 func tunnelHandler(w http.ResponseWriter, r *http.Request) {
         if r.Method == "GET" {
-                key := r.Header.Get("X-Key")
-                if key == *key1 || key == *key2 {
+                //key := r.Header.Get("X-Key")
+                //if key == *key1 || key == *key2 {
                         wsHandler(w, r)
-                } else {
-                        http.Error(w, "Missing or invalid key", 403)
-                }
+                //} else {
+                //        http.Error(w, "Missing or invalid key", 403)
+                //}
         } else {
                 http.Error(w, "Only GET requests are supported", 400)
                 //lpHandler(w, r)

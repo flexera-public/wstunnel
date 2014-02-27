@@ -127,9 +127,19 @@ func main() {
                 url := fmt.Sprintf("%s/_tunnel", *tunnel)
                 timer := time.NewTimer(10*time.Second)
                 log.Printf("Opening %s\n", url)
-                ws, _, err := d.Dial(url, h)
+                ws, resp, err := d.Dial(url, h)
                 if err != nil {
-                        log.Printf("Error opening connection: %s", err.Error())
+                        extra := ""
+                        if resp != nil {
+                                extra = resp.Status
+                                buf := make([]byte, 80)
+                                resp.Body.Read(buf)
+                                if len(buf) > 0 {
+                                        extra = extra + " -- " + string(buf)
+                                }
+                                resp.Body.Close()
+                        }
+                        log.Printf("Error opening connection: %s -- %s", err.Error(), extra)
                 } else {
                         // Safety setting
                         ws.SetReadLimit(100*1024*1024)
