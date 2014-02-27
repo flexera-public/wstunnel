@@ -12,9 +12,11 @@ import (
 	"log/syslog"
 	"io"
 	"os"
+	"net"
 	"net/http"
 	"regexp"
 	"runtime"
+	"strings"
 	"strconv"
 	"sync"
 	"time"
@@ -32,6 +34,7 @@ var httpTout *int= flag.Int("httptimeout", 180, "timeout for http requests in se
 var slog *string = flag.String("syslog", "", "syslog facility to log to")
 var key1 *string = flag.String("k1", "", "key to be presented by wstuncli")
 var key2 *string = flag.String("k2", "", "alternate key to be presented by wstuncli")
+var whoToken *string = flag.String("robowhois", "", "robowhois.com API token")
 var wsTimeout time.Duration
 
 var RetryError = errors.New("Error sending request, please retry")
@@ -66,7 +69,8 @@ type RemoteServer struct {
         lastId          int16                   // id of last request
         lastActivity    time.Time               // last activity on tunnel
         remoteAddr      string                  // last remote addr of tunnel (debug)
-        remoteNames     []string                // reverse DNS resolution of remoteAddr
+        remoteName      string                  // reverse DNS resolution of remoteAddr
+        remoteWhois     string                  // whois lookup of remoteAddr
         requestQueue    chan *RemoteRequest     // queue of requests to be sent
         requestSet      map[int16]*RemoteRequest // all requests in queue/flight indexed by ID
         requestSetMutex sync.Mutex
@@ -75,6 +79,30 @@ type RemoteServer struct {
 // The set of remote servers we know about
 var serverRegistry      = make(map[Token]*RemoteServer) // active remote servers indexed by token
 var serverRegistryMutex sync.Mutex
+
+// name Lookups
+var dnsCache = make(map[string]string)          // ip_address -> reverse DNS lookup
+var whoisCache = make(map[string]string)        // ip_address -> whois lookup
+var cacheMutex sync.Mutex
+
+func ipAddrLookup(ipAddr string) (dns, whois string) {
+        cacheMutex.Lock()
+        defer cacheMutex.Unlock()
+        dns, ok := dnsCache[ipAddr]
+        if !ok {
+                names, _ := net.LookupAddr(ipAddr)
+                dns = strings.Join(names, ",")
+                dnsCache[ipAddr] = dns
+                log.Printf("DNS lookup: %s -> %s", ipAddr, dns)
+        }
+        // whois lookup
+        whois, ok = whoisCache[ipAddr]
+        if !ok && *whoToken != "" {
+                whois = Whois(ipAddr, *whoToken)
+                whoisCache[ipAddr] = whois
+        }
+        return
+}
 
 //===== Main =====
 
@@ -169,24 +197,28 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
         serverRegistryMutex.Unlock()
         // print out the list of tunnels
         fmt.Fprintf(w, "tunnels=%d\n", len(serverRegistry))
+        reqPending := 0
+        badTunnels := 0
         for i, t := range rss {
-                fmt.Fprintf(w, "tunnel%02d_token=%s\n", i, CutToken(t.token))
+                fmt.Fprintf(w, "\ntunnel%02d_token=%s\n", i, CutToken(t.token))
                 fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(t.requestSet))
+                reqPending += len(t.requestSet)
                 fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, t.remoteAddr)
-                if t.remoteNames != nil {
-                        fmt.Fprintf(w, "tunnel%02d_tun_dns=", i)
-                        for j, n := range t.remoteNames {
-                                if j > 0 {
-                                        fmt.Fprint(w, ", ")
-                                }
-                                fmt.Fprintln(w, n)
-                        }
+                if t.remoteName != "" {
+                        fmt.Fprintf(w, "tunnel%02d_tun_dns=%s\n", i, t.remoteName)
+                }
+                if t.remoteWhois != "" {
+                        fmt.Fprintf(w, "tunnel%02d_tun_whois=%s\n", i, t.remoteWhois)
                 }
                 if t.lastActivity.IsZero() {
                         fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i)
+                        badTunnels += 1
                 } else {
                         fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i,
                                 time.Since(t.lastActivity).Seconds())
+                        if time.Since(t.lastActivity).Seconds() > 60 {
+                                badTunnels += 1
+                        }
                 }
                 if len(t.requestSet) > 0 {
                         t.requestSetMutex.Lock()
@@ -196,6 +228,9 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
                         t.requestSetMutex.Unlock()
                 }
         }
+        fmt.Fprintln(w, "")
+        fmt.Fprintf(w, "req_pending=%d\n", reqPending)
+        fmt.Fprintf(w, "dead_tunnels=%d\n", badTunnels)
 }
 
 // Handler for payload requests with the token in the Host header

@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-        "net"
         "net/http"
 	"time"
         "github.com/gorilla/websocket"
@@ -58,7 +57,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
         rs.lastActivity = time.Now()
         // do reverse DNS lookup asynchronously
         go func() {
-                rs.remoteNames, _ = net.LookupAddr(addr)
+                rs.remoteName, rs.remoteWhois = ipAddrLookup(rs.remoteAddr)
         }()
         // Set safety limits
         ws.SetReadLimit(100*1024*1024)
