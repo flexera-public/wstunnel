@@ -66,6 +66,7 @@ type RemoteServer struct {
         lastId          int16                   // id of last request
         lastActivity    time.Time               // last activity on tunnel
         remoteAddr      string                  // last remote addr of tunnel (debug)
+        remoteNames     []string                // reverse DNS resolution of remoteAddr
         requestQueue    chan *RemoteRequest     // queue of requests to be sent
         requestSet      map[int16]*RemoteRequest // all requests in queue/flight indexed by ID
         requestSetMutex sync.Mutex
@@ -159,14 +160,28 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 func statsHandler(w http.ResponseWriter, r *http.Request) {
         // let's start by doing a GC to ensure we reclaim file descriptors (?)
         runtime.GC()
-        // print out the list of tunnels
+        // make a copy of the set of remoteServers
         serverRegistryMutex.Lock()
+        rss := make([]*RemoteServer, 0, len(serverRegistry))
+        for _, rs := range serverRegistry {
+                rss = append(rss, rs)
+        }
+        serverRegistryMutex.Unlock()
+        // print out the list of tunnels
         fmt.Fprintf(w, "tunnels=%d\n", len(serverRegistry))
-        i := 0
-        for _, t := range serverRegistry {
+        for i, t := range rss {
                 fmt.Fprintf(w, "tunnel%02d_token=%s\n", i, CutToken(t.token))
                 fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(t.requestSet))
                 fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, t.remoteAddr)
+                if t.remoteNames != nil {
+                        fmt.Fprintf(w, "tunnel%02d_tun_dns=", i)
+                        for j, n := range t.remoteNames {
+                                if j > 0 {
+                                        fmt.Fprint(w, ", ")
+                                }
+                                fmt.Fprintln(w, n)
+                        }
+                }
                 if t.lastActivity.IsZero() {
                         fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i)
                 } else {
@@ -178,10 +193,9 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
                         if r, ok := t.requestSet[t.lastId]; ok {
                                 fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr)
                         }
+                        t.requestSetMutex.Unlock()
                 }
-                i += 1
         }
-        serverRegistryMutex.Unlock()
 }
 
 // Handler for payload requests with the token in the Host header
