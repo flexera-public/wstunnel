@@ -25,3 +25,5 @@ _testmain.go
 .s3cfg
 wstunsrv
 wstuncli
+wstunsrv-*
+wstuncli-*
