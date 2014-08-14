@@ -18,7 +18,7 @@ import (
 var _ fmt.Formatter
 
 func httpError(w http.ResponseWriter, tok, str string, code int) {
-	log.Printf("%s: WS ERR status=%d: %s\n", code, str)
+	log.Printf("%s: WS   ERR status=%d: %s\n", code, str)
 	http.Error(w, str, code)
 }
 
@@ -119,7 +119,7 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 			req.replyChan <- ResponseBuffer{
 				err: errors.New("Timeout before forwarding the request"),
 			}
-			log.Printf("%s #%d: WS timeout before sending (%.0fsecs ago)",
+			log.Printf("%s #%d: WS  SND timeout before sending (%.0fsecs ago)",
 				log_token, req.id, time.Now().Sub(req.deadline).Seconds())
 			continue
 		}
@@ -146,7 +146,7 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		log.Printf("%s #%d: WS SND %s\n", log_token, req.id, req.info)
+		log.Printf("%s #%d: WS   SND %s\n", log_token, req.id, req.info)
 	}
 	// tell the sender to retry the request
 	req.replyChan <- ResponseBuffer{err: RetryError}
@@ -186,7 +186,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		log.Printf("%s #%d: WS RCV", log_token, id)
+		log.Printf("%s #%d: WS   RCV", log_token, id)
 		// try to match request
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
@@ -200,15 +200,15 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 			case req.replyChan <- rb:
 				// great!
 			default:
-				log.Printf("%s #%d: WS RCV can't enqueue response\n", log_token, id)
+				log.Printf("%s #%d: WS   RCV can't enqueue response\n", log_token, id)
 			}
 		} else {
-			log.Printf("%s #%d: WS RCV orphan response\n", log_token, id)
+			log.Printf("%s #%d: WS   RCV orphan response\n", log_token, id)
 		}
 	}
 	// print error message
 	if err != nil {
-		log.Printf("%s: WS closing due to %s\n", log_token, err.Error())
+		log.Printf("%s: WS   closing due to %s\n", log_token, err.Error())
 	}
 	// close up shop
 	ch <- 0 // notify sender
