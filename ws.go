@@ -146,7 +146,7 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		log.Printf("%s #d: WS SND %s\n", log_token, req.id, req.info)
+		log.Printf("%s #%d: WS SND %s\n", log_token, req.id, req.info)
 	}
 	// tell the sender to retry the request
 	req.replyChan <- ResponseBuffer{err: RetryError}
@@ -181,12 +181,12 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		log.Printf("%s #%d: WS RCV", log_token, id)
 		// read request itself
 		buf, err := ioutil.ReadAll(r)
 		if err != nil {
 			break
 		}
+		log.Printf("%s #%d: WS RCV", log_token, id)
 		// try to match request
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
@@ -208,7 +208,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 	}
 	// print error message
 	if err != nil {
-		log.Printf("%s: closing due to %s\n", log_token, err.Error())
+		log.Printf("%s: WS closing due to %s\n", log_token, err.Error())
 	}
 	// close up shop
 	ch <- 0 // notify sender

@@ -309,20 +309,27 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 	if req.remoteAddr == "" {
 		req.remoteAddr = r.RemoteAddr
 	}
-	log.Printf("%s: HTTP RCV %s %s (%s)\n", log_token, r.Method, r.URL, req.remoteAddr)
+	//log.Printf("%s: HTTP RCV %s %s (%s)\n", log_token, r.Method, r.URL, req.remoteAddr)
 	//log.Printf("HTTP->%s: %s %s tout=%s\n", log_token, r.Method, r.URL,
 	//        req.deadline.Format(time.RFC1123Z))
 
 	// repeatedly try to get a response
 Tries:
-	for tries := 3; tries > 0; tries -= 1 {
+	for tries := 1; tries <= 3; tries += 1 {
 		// enqueue request
 		err := rs.AddRequest(req)
 		if err != nil {
-			log.Printf("%s: HTTP RET error: %s", log_token, err.Error())
+			log.Printf("%s: HTTP RCV %s %s (%s) RET status=504 error: %s",
+				log_token, r.Method, r.URL, req.remoteAddr, err.Error())
 			http.Error(w, err.Error(), 504)
 			break Tries
 		}
+		try := ""
+		if tries > 1 {
+			try = fmt.Sprintf("(attempt #%d)", tries)
+		}
+		log.Printf("%s #%d: HTTP RCV %s %s (%s) %s", log_token, req.id, r.Method, r.URL,
+			req.remoteAddr, try)
 		// wait for response
 		select {
 		case resp := <-req.replyChan:
