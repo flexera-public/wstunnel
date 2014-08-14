@@ -11,8 +11,8 @@ go-version:
 commit-check:
 	@if ! git status | egrep -q "working directory clean"; then echo "Please commit first"; false; fi
 s3=rightscale-vscale/wstunnel/
-sha=`git log | head -1 | cut -c 8-13`
+sha:=$(shell git log | head -1 | cut -c 8-15)
 upload: all .s3cfg commit-check
 	cp wstuncli wstuncli-${sha}
 	cp wstunsrv wstunsrv-${sha}
-	echo s3cmd -P -c ./.s3cfg --force put wstuncli wstuncli-${sha} wstunsrv wstunsrv-${sha} s3://${s3}
+	s3cmd -P -c ./.s3cfg --force put wstuncli wstuncli-${sha} wstunsrv wstunsrv-${sha} s3://${s3}
