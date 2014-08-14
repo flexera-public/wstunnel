@@ -22,3 +22,6 @@ _testmain.go
 *.exe
 .*.swp
 .*.swo
+.s3cfg
+wstunsrv
+wstuncli

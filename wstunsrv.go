@@ -296,10 +296,6 @@ func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
 
 // payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
 func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
-
-	// get a hold of the remote server
-	rs := GetRemoteServer(Token(token))
-
 	// create the request object
 	req := MakeRequest(r)
 	req.token = token
@@ -309,13 +305,14 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 	if req.remoteAddr == "" {
 		req.remoteAddr = r.RemoteAddr
 	}
-	//log.Printf("%s: HTTP RCV %s %s (%s)\n", log_token, r.Method, r.URL, req.remoteAddr)
-	//log.Printf("HTTP->%s: %s %s tout=%s\n", log_token, r.Method, r.URL,
-	//        req.deadline.Format(time.RFC1123Z))
 
 	// repeatedly try to get a response
+	var rs *RemoteServer
 Tries:
 	for tries := 1; tries <= 3; tries += 1 {
+		// get a hold of the remote server
+		rs = GetRemoteServer(Token(token))
+
 		// enqueue request
 		err := rs.AddRequest(req)
 		if err != nil {
@@ -398,6 +395,26 @@ func GetRemoteServer(token Token) *RemoteServer {
 	return rs
 }
 
+func (rs *RemoteServer) AbortRequests() {
+	logToken := CutToken(rs.token)
+	// end any requests that are queued
+	for {
+		select {
+		case req := <-rs.requestQueue:
+			select {
+			case req.replyChan <- ResponseBuffer{err: RetryError}: // non-blocking send
+				log.Printf("%s #d: WS tunnel inactive timeout causes retry",
+					logToken, req.id)
+			default:
+			}
+		default:
+			break
+		}
+	}
+	idle := time.Since(rs.lastActivity).Minutes()
+	log.Printf("%s WS tunnel closed due to inactivity for %.0f minutes", logToken, idle)
+}
+
 func (rs *RemoteServer) AddRequest(req *RemoteRequest) error {
 	rs.requestSetMutex.Lock()
 	defer rs.requestSetMutex.Unlock()
@@ -468,5 +485,23 @@ func copyHeader(dst, src http.Header) {
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
+	}
+}
+
+// idleTunnelReaper should be run in a goroutine to kill tunnels that are idle for a long time
+func idleTunnelReaper() {
+	for {
+		serverRegistryMutex.Lock()
+		for _, rs := range serverRegistry {
+			if time.Since(rs.lastActivity) > 60*time.Minute {
+				go func() {
+					// unlink so new tunnels/tokens use a new RemoteServer object
+					delete(serverRegistry, rs.token)
+					rs.AbortRequests()
+				}()
+			}
+		}
+		serverRegistryMutex.Unlock()
+		time.Sleep(time.Minute)
 	}
 }
