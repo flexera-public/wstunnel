@@ -9,7 +9,7 @@ wstunsrv: wstunsrv.go ws.go robowhois.go go-version
 go-version:
 	@if ! go version | egrep -q "go1.3"; then echo "You must use go 1.3"; false; fi
 commit-check:
-	@if ! git status | egrep -q "Nothing to commit"; then echo "Please commit first"; false; fi
+	@if ! git status | egrep -q "working directory clean"; then echo "Please commit first"; false; fi
 s3=rightscale-vscale/wstunnel/
 sha=`git log | head -1 | cut -c 8-13`
 upload: all .s3cfg commit-check
