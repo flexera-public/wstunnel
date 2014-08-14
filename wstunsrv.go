@@ -40,6 +40,8 @@ var lookup *string = flag.String("lookup", "", "IP address to lookup in robowhoi
 var tokLen *int = flag.Int("tokenlength", 16, "minimum token length")
 var wsTimeout time.Duration
 
+const cliTout = 300 // http read/write/idle timeout
+
 var RetryError = errors.New("Error sending request, please retry")
 
 //===== Data Structures =====
@@ -166,6 +168,10 @@ func main() {
 		*tout = 600
 	}
 	wsTimeout = time.Duration(*tout) * time.Second
+	log.Printf("Timeout for remote requests is %d seconds", *httpTout)
+	log.Printf("Timeout for websocket keep-alives is %d seconds", *tout)
+	//log.Printf("Client HTTP read/write timeout is %d seconds", cliTout)
+	log.Printf("Client HTTP read/write timeouts are disabled due to a bug in Go!")
 
 	//===== HTTP Server =====
 
@@ -180,9 +186,12 @@ func main() {
 	log.Printf("Listening on port %d\n", *port)
 	laddr := fmt.Sprintf(":%d", *port)
 	server := http.Server{
-		Addr:         laddr,
-		ReadTimeout:  5 * time.Minute, // timeout while reading req, also idle t-out
-		WriteTimeout: 5 * time.Minute, // timeout while writing response
+		Addr: laddr,
+		// Read/Write timeouts disabled for now due to bug:
+		// https://code.google.com/p/go/issues/detail?id=6410
+		// https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
+		//ReadTimeout: time.Duration(cliTout) * time.Second, // read and idle timeout
+		//WriteTimeout: time.Duration(cliTout) * time.Second, // timeout while writing response
 	}
 	log.Fatal(server.ListenAndServe())
 }
@@ -256,7 +265,8 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "dead_tunnels=%d\n", badTunnels)
 }
 
-// Handler for payload requests with the token in the Host header
+// payloadHeaderHandler handles payload requests with the tunnel token in the Host header.
+// Payload requests are requests that are to be forwarded through the tunnel.
 func payloadHeaderHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get("X-Token")
 	if token == "" {
@@ -267,9 +277,11 @@ func payloadHeaderHandler(w http.ResponseWriter, r *http.Request) {
 	payloadHandler(w, r, Token(token))
 }
 
-// Handler for payload requests with the token in the URI
+// Regexp for extracting the tunnel token from the URI
 var matchToken = regexp.MustCompile("^/_token/([^/]+)(/.*)")
 
+// payloadPrefixHandler handles payload requests with the tunnel token in a URI prefix.
+// Payload requests are requests that are to be forwarded through the tunnel.
 func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
 	reqUrl := r.URL.String()
 	m := matchToken.FindStringSubmatch(reqUrl)
@@ -282,7 +294,7 @@ func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
 	payloadHandler(w, r, Token(m[1]))
 }
 
-// Handler for payload requests with the token already sorted out
+// payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
 func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 
 	// get a hold of the remote server
@@ -297,7 +309,7 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 	if req.remoteAddr == "" {
 		req.remoteAddr = r.RemoteAddr
 	}
-	log.Printf("HTTP->%s: %s %s (%s)\n", log_token, r.Method, r.URL, req.remoteAddr)
+	log.Printf("%s: HTTP RCV %s %s (%s)\n", log_token, r.Method, r.URL, req.remoteAddr)
 	//log.Printf("HTTP->%s: %s %s tout=%s\n", log_token, r.Method, r.URL,
 	//        req.deadline.Format(time.RFC1123Z))
 
@@ -307,7 +319,7 @@ Tries:
 		// enqueue request
 		err := rs.AddRequest(req)
 		if err != nil {
-			log.Printf("HTTP<-%s error: %s", log_token, err.Error())
+			log.Printf("%s: HTTP RET error: %s", log_token, err.Error())
 			http.Error(w, err.Error(), 504)
 			break Tries
 		}
@@ -317,20 +329,22 @@ Tries:
 			// if there's no error just respond
 			if resp.err == nil {
 				code := WriteResponse(w, resp.response)
-				log.Printf("HTTP<-%s status=%d\n", log_token, code)
+				log.Printf("%s #%d: HTTP RET status=%d\n", log_token, req.id, code)
 				break Tries
 			}
 			// if it's a non-retryable error then write the error
 			if resp.err != RetryError {
-				log.Printf("HTTP<-%s error=%s\n", log_token, resp.err.Error())
+				log.Printf("%s #%d: HTTP RET status=504 error=%s\n",
+					log_token, req.id, resp.err.Error())
 				http.Error(w, resp.err.Error(), 504)
 				break Tries
 			}
 			// else we're gonna retry
-			log.Printf("HTTP->%s: retrying %s %s\n", log_token, r.Method, r.URL)
+			log.Printf("%s #%d: retrying %s %s\n", log_token, req.id, r.Method, r.URL)
 		case <-time.After(time.Duration(*httpTout) * time.Second):
 			// it timed out...
-			log.Printf("HTTP<-%s timeout", log_token)
+			log.Printf("%s #%d: HTTP RET status=504 error=Tunnel timeout",
+				log_token, req.id)
 			http.Error(w, "Tunnel timeout", 504)
 			break Tries
 		}
@@ -340,18 +354,12 @@ Tries:
 	rs.RetireRequest(req)
 }
 
-// Handler for tunnel establishment requests
+// tunnelHandler handles tunnel establishment requests
 func tunnelHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
-		//key := r.Header.Get("X-Key")
-		//if key == *key1 || key == *key2 {
 		wsHandler(w, r)
-		//} else {
-		//        http.Error(w, "Missing or invalid key", 403)
-		//}
 	} else {
 		http.Error(w, "Only GET requests are supported", 400)
-		//lpHandler(w, r)
 	}
 }
 
