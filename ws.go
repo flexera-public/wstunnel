@@ -150,7 +150,7 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 	}
 	// tell the sender to retry the request
 	req.replyChan <- ResponseBuffer{err: RetryError}
-	log.Printf("%s #d: WS causes retry\n", log_token, req.id)
+	log.Printf("%s #%d: WS causes retry\n", log_token, req.id)
 	// close up shop
 	ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))
 	time.Sleep(2 * time.Second)

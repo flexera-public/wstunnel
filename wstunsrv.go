@@ -40,7 +40,9 @@ var lookup *string = flag.String("lookup", "", "IP address to lookup in robowhoi
 var tokLen *int = flag.Int("tokenlength", 16, "minimum token length")
 var wsTimeout time.Duration
 
-const cliTout = 300 // http read/write/idle timeout
+// The ReadTimeout and WriteTimeout don't actually work in Go
+// https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
+//const cliTout = 300 // http read/write/idle timeout
 
 var RetryError = errors.New("Error sending request, please retry")
 
@@ -171,7 +173,8 @@ func main() {
 	log.Printf("Timeout for remote requests is %d seconds", *httpTout)
 	log.Printf("Timeout for websocket keep-alives is %d seconds", *tout)
 	//log.Printf("Client HTTP read/write timeout is %d seconds", cliTout)
-	log.Printf("Client HTTP read/write timeouts are disabled due to a bug in Go!")
+
+	go idleTunnelReaper()
 
 	//===== HTTP Server =====
 
