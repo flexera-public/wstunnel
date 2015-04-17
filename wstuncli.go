@@ -29,7 +29,6 @@ import (
 	//"crypto/tls"
 	"flag"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"io"
 	"io/ioutil"
 	"log"
@@ -37,53 +36,33 @@ import (
 	"net/http/httputil"
 	_ "net/http/pprof"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 var _ fmt.Formatter
 
-var token *string = flag.String("token", "", "rendez-vous token identifying this server")
-var tunnel *string = flag.String("tunnel", "",
-	"websocket server ws[s]://hostname:port to connect to")
-var server *string = flag.String("server", "http://localhost",
-	"local HTTP(S) server to send received requests to")
-var pidf *string = flag.String("pidfile", "", "path for pidfile")
-var logf *string = flag.String("logfile", "", "path for log file")
-var tout *int = flag.Int("timeout", 30, "timeout on websocket in seconds")
-var wsTimeout time.Duration
-
 //===== Main =====
 
-func main() {
-	flag.Parse()
+func wstuncli(args []string) {
+	var cliFlag = flag.NewFlagSet("client", flag.ExitOnError)
+	var token *string = cliFlag.String("token", "", "rendez-vous token identifying this server")
+	var tunnel *string = cliFlag.String("tunnel", "",
+		"websocket server ws[s]://hostname:port to connect to")
+	var server *string = cliFlag.String("server", "http://localhost",
+		"local HTTP(S) server to send received requests to")
+	var pidf *string = cliFlag.String("pidfile", "", "path for pidfile")
+	var logf *string = cliFlag.String("logfile", "", "path for log file")
+	var tout *int = cliFlag.Int("timeout", 30, "timeout on websocket in seconds")
 
-	if *pidf != "" {
-		_ = os.Remove(*pidf)
-		pid := os.Getpid()
-		f, err := os.Create(*pidf)
-		if err != nil {
-			log.Fatalf("Can't create pidfile %s: %s", *pidf, err.Error())
-		}
-		_, err = f.WriteString(strconv.Itoa(pid) + "\n")
-		if err != nil {
-			log.Fatalf("Can't write to pidfile %s: %s", *pidf, err.Error())
-		}
-		f.Close()
-	}
+	cliFlag.Parse(args)
 
-	if *logf != "" {
-		log.Printf("Switching logging to %s", *logf)
-		f, err := os.OpenFile(*logf, os.O_APPEND+os.O_WRONLY+os.O_CREATE, 0664)
-		if err != nil {
-			log.Fatalf("Can't create log file %s: %s", *logf, err.Error())
-		}
-		log.SetOutput(f)
-		log.Printf("Started logging here")
-	}
+	writePid(*pidf)
+	setLogfile(*logf)
+	setWsTimeout(*tout)
 
 	// validate -tunnel
 	if *tunnel == "" {
@@ -107,13 +86,6 @@ func main() {
 	if *token == "" {
 		log.Fatal("Must specify rendez-vous token using -token option")
 	}
-	if *tout < 3 {
-		*tout = 3
-	}
-	if *tout > 600 {
-		*tout = 600
-	}
-	wsTimeout = time.Duration(*tout) * time.Second
 
 	//===== Loop =====
 
@@ -145,7 +117,7 @@ func main() {
 			// Safety setting
 			ws.SetReadLimit(100 * 1024 * 1024)
 			// Request Loop
-			handleWsRequests(ws)
+			handleWsRequests(ws, *server)
 		}
 		<-timer.C // ensure we don't open connections too rapidly
 	}
@@ -153,7 +125,7 @@ func main() {
 
 // Main function to handle WS requests: it reads a request from the socket, then forks
 // a goroutine to perform the actual http request and return the result
-func handleWsRequests(ws *websocket.Conn) {
+func handleWsRequests(ws *websocket.Conn, server string) {
 	go pinger(ws)
 	for {
 		ws.SetReadDeadline(time.Time{}) // separate ping-pong routine does timeout
@@ -182,7 +154,7 @@ func handleWsRequests(ws *websocket.Conn) {
 			break
 		}
 		// Hand off to goroutine to finish off while we read the next request
-		go finishRequest(ws, id, req)
+		go finishRequest(ws, server, id, req)
 	}
 	// delay a few seconds to allow for writes to drain and then force-close the socket
 	go func() {
@@ -222,14 +194,6 @@ func pinger(ws *websocket.Conn) {
 
 //===== HTTP Header Stuff =====
 
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
-}
-
 // Hop-by-hop headers. These are removed when sent to the backend.
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
 var hopHeaders = []string{
@@ -248,11 +212,11 @@ var hopHeaders = []string{
 
 var wsWriterMutex sync.Mutex // mutex to allow a single goroutine to send a response at a time
 
-func finishRequest(ws *websocket.Conn, id int16, req *http.Request) {
+func finishRequest(ws *websocket.Conn, server string, id int16, req *http.Request) {
 	log.Printf("WS #%d: %s %s\n", id, req.Method, req.RequestURI)
 	// Construct the URL for the outgoing request
 	var err error
-	req.URL, err = url.Parse(fmt.Sprintf("%s%s", *server, req.RequestURI))
+	req.URL, err = url.Parse(fmt.Sprintf("%s%s", server, req.RequestURI))
 	if err != nil {
 		log.Printf("handleWsRequests: cannot parse requestURI: %s", err.Error())
 		return

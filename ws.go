@@ -40,10 +40,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, addr, "Origin header with rendez-vous token required", 400)
 		return
 	}
-	if len(token) < *tokLen {
+	if len(token) < MIN_TOKEN_LEN {
 		httpError(w, addr,
 			fmt.Sprintf("Rendez-vous token (%s) is too short (must be %d chars)",
-				token, *tokLen), 400)
+				token, MIN_TOKEN_LEN), 400)
 		return
 	}
 	logTok := CutToken(Token(token))

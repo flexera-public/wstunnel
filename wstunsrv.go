@@ -18,27 +18,12 @@ import (
 	"os"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 var _ fmt.Formatter
-
-var port *int = flag.Int("port", 80, "port for http/ws server to listen on")
-var pidf *string = flag.String("pidfile", "", "path for pidfile")
-var logf *string = flag.String("logfile", "", "path for log file")
-var tout *int = flag.Int("wstimeout", 30, "timeout on websocket in seconds")
-var httpTout *int = flag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
-var slog *string = flag.String("syslog", "", "syslog facility to log to")
-
-//var key1 *string = flag.String("k1", "", "key to be presented by wstuncli")
-//var key2 *string = flag.String("k2", "", "alternate key to be presented by wstuncli")
-var whoToken *string = flag.String("robowhois", "", "robowhois.com API token")
-var lookup *string = flag.String("lookup", "", "IP address to lookup in robowhois (doesn't run tunnel)")
-var tokLen *int = flag.Int("tokenlength", 16, "minimum token length")
-var wsTimeout time.Duration
 
 // The ReadTimeout and WriteTimeout don't actually work in Go
 // https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
@@ -49,7 +34,8 @@ var RetryError = errors.New("Error sending request, please retry")
 //===== Data Structures =====
 
 const (
-	MAX_REQ = 20 // max queued requests per remote server
+	MAX_REQ       = 20 // max queued requests per remote server
+	MIN_TOKEN_LEN = 16 // min number of chars in a token
 )
 
 type Token string
@@ -88,6 +74,7 @@ var serverRegistry = make(map[Token]*RemoteServer) // active remote servers inde
 var serverRegistryMutex sync.Mutex
 
 // name Lookups
+var whoToken string                      // token for the whois service
 var dnsCache = make(map[string]string)   // ip_address -> reverse DNS lookup
 var whoisCache = make(map[string]string) // ip_address -> whois lookup
 var cacheMutex sync.Mutex
@@ -104,8 +91,8 @@ func ipAddrLookup(ipAddr string) (dns, whois string) {
 	}
 	// whois lookup
 	whois, ok = whoisCache[ipAddr]
-	if !ok && *whoToken != "" {
-		whois = Whois(ipAddr, *whoToken)
+	if !ok && whoToken != "" {
+		whois = Whois(ipAddr, whoToken)
 		whoisCache[ipAddr] = whois
 	}
 	return
@@ -113,29 +100,25 @@ func ipAddrLookup(ipAddr string) (dns, whois string) {
 
 //===== Main =====
 
-func main() {
-	flag.Parse()
+var httpTimeout int
 
-	if *lookup != "" {
-		names, _ := net.LookupAddr(*lookup)
-		fmt.Printf("DNS   %s -> %s\n", *lookup, strings.Join(names, ","))
-		fmt.Printf("WHOIS %s -> %s\n", *lookup, Whois(*lookup, *whoToken))
-		os.Exit(0)
-	}
+func wstunsrv(args []string) {
+	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
+	var port *int = srvFlag.Int("port", 80, "port for http/ws server to listen on")
+	var pidf *string = srvFlag.String("pidfile", "", "path for pidfile")
+	var logf *string = srvFlag.String("logfile", "", "path for log file")
+	var tout *int = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
+	var httpTout *int = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
+	var slog *string = srvFlag.String("syslog", "", "syslog facility to log to")
+	var whoTok *string = srvFlag.String("robowhois", "", "robowhois.com API token")
+	var lookup *string = srvFlag.String("lookup", "", "IP address to lookup in robowhois (doesn't run tunnel)")
 
-	if *pidf != "" {
-		_ = os.Remove(*pidf)
-		pid := os.Getpid()
-		f, err := os.Create(*pidf)
-		if err != nil {
-			log.Fatalf("Can't create pidfile %s: %s", *pidf, err.Error())
-		}
-		_, err = f.WriteString(strconv.Itoa(pid) + "\n")
-		if err != nil {
-			log.Fatalf("Can't write to pidfile %s: %s", *pidf, err.Error())
-		}
-		f.Close()
-	}
+	srvFlag.Parse(args)
+
+	writePid(*pidf)
+	setLogfile(*logf)
+	setWsTimeout(*tout)
+	whoToken = *whoTok
 
 	if *slog != "" {
 		log.Printf("Switching logging to syslog %s", *slog)
@@ -150,29 +133,16 @@ func main() {
 		log.SetFlags(0) // syslog already has timestamp
 		log.Printf("Started logging here")
 	}
-	if *logf != "" {
-		log.Printf("Switching logging to %s", *logf)
-		f, err := os.OpenFile(*logf, os.O_APPEND+os.O_WRONLY+os.O_CREATE, 0664)
-		if err != nil {
-			log.Fatalf("Can't create log file %s: %s", *logf, err.Error())
-		}
-		log.SetOutput(f)
-		log.Printf("Started logging here")
-	}
-	//if *key1 == "" || *key2 == "" {
-	//        log.Printf("Warning: wstuncli can connect without a key")
-	//}
 
-	if *tout < 3 {
-		*tout = 3
+	if *lookup != "" {
+		names, _ := net.LookupAddr(*lookup)
+		fmt.Printf("DNS   %s -> %s\n", *lookup, strings.Join(names, ","))
+		fmt.Printf("WHOIS %s -> %s\n", *lookup, Whois(*lookup, whoToken))
+		os.Exit(0)
 	}
-	if *tout > 600 {
-		*tout = 600
-	}
-	wsTimeout = time.Duration(*tout) * time.Second
-	log.Printf("Timeout for remote requests is %d seconds", *httpTout)
-	log.Printf("Timeout for websocket keep-alives is %d seconds", *tout)
-	//log.Printf("Client HTTP read/write timeout is %d seconds", cliTout)
+
+	httpTimeout = *httpTout
+	log.Printf("Timeout for remote requests is %d seconds", httpTimeout)
 
 	go idleTunnelReaper()
 
@@ -348,7 +318,7 @@ Tries:
 			}
 			// else we're gonna retry
 			log.Printf("%s #%d: retrying %s %s\n", log_token, req.id, r.Method, r.URL)
-		case <-time.After(time.Duration(*httpTout) * time.Second):
+		case <-time.After(time.Duration(httpTimeout) * time.Second):
 			// it timed out...
 			log.Printf("%s #%d: HTTP RET status=504 error=Tunnel timeout",
 				log_token, req.id)
@@ -450,7 +420,7 @@ func MakeRequest(r *http.Request) *RemoteRequest {
 		info:      r.Method + " " + r.URL.String(),
 		buffer:    buf,
 		replyChan: make(chan ResponseBuffer, 10),
-		deadline:  time.Now().Add(time.Duration(*httpTout) * time.Second),
+		deadline:  time.Now().Add(time.Duration(httpTimeout) * time.Second),
 	}
 
 }
@@ -480,15 +450,6 @@ func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 	return resp.StatusCode
-}
-
-// copy http headers over
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
 }
 
 // idleTunnelReaper should be run in a goroutine to kill tunnels that are idle for a long time
