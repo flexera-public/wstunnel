@@ -47,7 +47,7 @@ var _ fmt.Formatter
 
 //===== Main =====
 
-func wstuncli(args []string) {
+func wstuncli(args []string) chan struct{} {
 	var cliFlag = flag.NewFlagSet("client", flag.ExitOnError)
 	var token *string = cliFlag.String("token", "", "rendez-vous token identifying this server")
 	var tunnel *string = cliFlag.String("tunnel", "",
@@ -87,40 +87,54 @@ func wstuncli(args []string) {
 		log.Fatal("Must specify rendez-vous token using -token option")
 	}
 
+	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
+	// a fresh connection
+	exitChan := make(chan struct{}, 1)
+
 	//===== Loop =====
 
 	// Keep opening websocket connections to tunnel requests
-	for {
-		d := &websocket.Dialer{
-			ReadBufferSize:  100 * 1024,
-			WriteBufferSize: 100 * 1024,
-		}
-		h := make(http.Header)
-		h.Add("Origin", *token)
-		url := fmt.Sprintf("%s/_tunnel", *tunnel)
-		timer := time.NewTimer(10 * time.Second)
-		log.Printf("Opening %s\n", url)
-		ws, resp, err := d.Dial(url, h)
-		if err != nil {
-			extra := ""
-			if resp != nil {
-				extra = resp.Status
-				buf := make([]byte, 80)
-				resp.Body.Read(buf)
-				if len(buf) > 0 {
-					extra = extra + " -- " + string(buf)
-				}
-				resp.Body.Close()
+	go func() {
+		for {
+			d := &websocket.Dialer{
+				ReadBufferSize:  100 * 1024,
+				WriteBufferSize: 100 * 1024,
 			}
-			log.Printf("Error opening connection: %s -- %s", err.Error(), extra)
-		} else {
-			// Safety setting
-			ws.SetReadLimit(100 * 1024 * 1024)
-			// Request Loop
-			handleWsRequests(ws, *server)
+			h := make(http.Header)
+			h.Add("Origin", *token)
+			url := fmt.Sprintf("%s/_tunnel", *tunnel)
+			timer := time.NewTimer(10 * time.Second)
+			log.Printf("Opening %s\n", url)
+			ws, resp, err := d.Dial(url, h)
+			if err != nil {
+				extra := ""
+				if resp != nil {
+					extra = resp.Status
+					buf := make([]byte, 80)
+					resp.Body.Read(buf)
+					if len(buf) > 0 {
+						extra = extra + " -- " + string(buf)
+					}
+					resp.Body.Close()
+				}
+				log.Printf("Error opening connection: %s -- %s", err.Error(), extra)
+			} else {
+				// Safety setting
+				ws.SetReadLimit(100 * 1024 * 1024)
+				// Request Loop
+				handleWsRequests(ws, *server)
+			}
+			// check whether we need to exit
+			select {
+			case <-exitChan:
+				break
+			}
+
+			<-timer.C // ensure we don't open connections too rapidly
 		}
-		<-timer.C // ensure we don't open connections too rapidly
-	}
+	}()
+
+	return exitChan
 }
 
 // Main function to handle WS requests: it reads a request from the socket, then forks

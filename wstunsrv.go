@@ -102,7 +102,7 @@ func ipAddrLookup(ipAddr string) (dns, whois string) {
 
 var httpTimeout int
 
-func wstunsrv(args []string) {
+func wstunsrv(args []string, listener net.Listener) chan struct{} {
 	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
 	var port *int = srvFlag.Int("port", 80, "port for http/ws server to listen on")
 	var pidf *string = srvFlag.String("pidfile", "", "path for pidfile")
@@ -144,6 +144,8 @@ func wstunsrv(args []string) {
 	httpTimeout = *httpTout
 	log.Printf("Timeout for remote requests is %d seconds", httpTimeout)
 
+	exitChan := make(chan struct{}, 1)
+
 	go idleTunnelReaper()
 
 	//===== HTTP Server =====
@@ -156,17 +158,29 @@ func wstunsrv(args []string) {
 	http.HandleFunc("/_stats", statsHandler)
 
 	// Now create the HTTP server and let it do its thing
-	log.Printf("Listening on port %d\n", *port)
-	laddr := fmt.Sprintf(":%d", *port)
-	server := http.Server{
-		Addr: laddr,
-		// Read/Write timeouts disabled for now due to bug:
-		// https://code.google.com/p/go/issues/detail?id=6410
-		// https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
-		//ReadTimeout: time.Duration(cliTout) * time.Second, // read and idle timeout
-		//WriteTimeout: time.Duration(cliTout) * time.Second, // timeout while writing response
+	if listener == nil {
+		log.Printf("Listening on port %d\n", *port)
+		laddr := fmt.Sprintf(":%d", *port)
+		var err error
+		listener, err = net.Listen("tcp", laddr)
+		if err != nil {
+			log.Fatalf("Cannot listen on %s", laddr)
+		}
 	}
-	log.Fatal(server.ListenAndServe())
+	server := http.Server{}
+	go server.Serve(listener)
+	// Read/Write timeouts disabled for now due to bug:
+	// https://code.google.com/p/go/issues/detail?id=6410
+	// https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
+	//ReadTimeout: time.Duration(cliTout) * time.Second, // read and idle timeout
+	//WriteTimeout: time.Duration(cliTout) * time.Second, // timeout while writing response
+
+	go func() {
+		<-exitChan
+		listener.Close()
+	}()
+
+	return exitChan
 }
 
 //===== Handlers =====

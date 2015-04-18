@@ -21,10 +21,11 @@ func main() {
 	case "cli":
 		wstuncli(os.Args[2:])
 	case "srv":
-		wstunsrv(os.Args[2:])
+		wstunsrv(os.Args[2:], nil)
 	default:
 		log.Fatalf("Usage: %s [cli|srv] [-options...]", os.Args[0])
 	}
+	<-make(chan struct{}, 0)
 }
 
 func writePid(file string) {
