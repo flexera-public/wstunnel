@@ -112,9 +112,10 @@ clean:
 # and then pointlessly complains about bad formatting in imported packages, sigh
 lint:
 	@if gofmt -l *.go */*.go | grep .go; then \
-	  echo "^- Repo contains improperly formatted go files" && exit 1; \
+	  echo "^- Repo contains improperly formatted go files; run gofmt -w *.go */*.go" && exit 1; \
 	  else echo "All .go files formatted correctly"; fi
-	go vet ./...
+	go tool vet -composites=false *.go
+	#go tool vet -composites=false **/*.go
 
 travis-test: lint
 	ginkgo -r -cover
