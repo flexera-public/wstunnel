@@ -22,6 +22,8 @@ func main() {
 		wstuncli(os.Args[2:])
 	case "srv":
 		wstunsrv(os.Args[2:], nil)
+	case "version", "-version", "--version":
+		log.Fatal(VV)
 	default:
 		log.Fatalf("Usage: %s [cli|srv] [-options...]", os.Args[0])
 	}

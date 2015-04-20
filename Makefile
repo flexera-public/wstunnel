@@ -53,11 +53,11 @@ PATH:=$(PWD)/Godeps/_workspace/bin:$(PATH)
 
 # the default target builds a binary in the top-level dir for whatever the local OS is
 default: $(NAME)
-$(NAME): *.go version depend
+$(NAME): *.go version
 	go build -o $(NAME) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
-build: $(NAME) build/$(NAME)-linux-amd64.tgz
+build: depend $(NAME) build/$(NAME)-linux-amd64.tgz
 # build/$(NAME)-darwin-amd64.tgz build/$(NAME)-linux-arm.tgz build/$(NAME)-windows-amd64.zip
 
 # create a tgz with the binary and any artifacts that are necessary
