@@ -1,6 +1,11 @@
 WStunnel - Web Sockets Tunnel
 =============================
 
+- Master: [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
+[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_master.svg)](https://gocover.io/github.com/rightscale/wstunnel)
+- multihost: [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=multihost)](https://travis-ci.org/rightscale/wstunnel)
+[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_multihost.svg)](https://gocover.io/github.com/rightscale/wstunnel)
+
 This pair of client and server apps implement an HTTPS tunnel that can connect servers sitting
 behind an HTTP proxy and firewall to clients on the internet. It differs from many other projects
 by handling many concurrent tunnels allowing a central client (or set of clients) to make requests
