@@ -18,7 +18,7 @@ import (
 var _ fmt.Formatter
 
 func httpError(w http.ResponseWriter, tok, str string, code int) {
-	log.Printf("%s: WS   ERR status=%d: %s\n", code, str)
+	log.Printf("%s WS:   ERR status=%d: %s\n", tok, code, str)
 	http.Error(w, str, code)
 }
 

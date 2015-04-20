@@ -385,17 +385,18 @@ func GetRemoteServer(token Token) *RemoteServer {
 func (rs *RemoteServer) AbortRequests() {
 	logToken := CutToken(rs.token)
 	// end any requests that are queued
+l:
 	for {
 		select {
 		case req := <-rs.requestQueue:
 			select {
 			case req.replyChan <- ResponseBuffer{err: RetryError}: // non-blocking send
-				log.Printf("%s #d: WS tunnel inactive timeout causes retry",
+				log.Printf("%s %d: WS tunnel inactive timeout causes retry",
 					logToken, req.id)
 			default:
 			}
 		default:
-			break
+			break l
 		}
 	}
 	idle := time.Since(rs.lastActivity).Minutes()
