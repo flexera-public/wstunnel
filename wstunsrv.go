@@ -486,5 +486,5 @@ func idleTunnelReaper() {
 		serverRegistryMutex.Unlock()
 		time.Sleep(time.Minute)
 	}
-	log15.Debug("idleTunnelReaper ended")
+	//log15.Debug("idleTunnelReaper ended")
 }
