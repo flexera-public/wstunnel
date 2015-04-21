@@ -83,10 +83,9 @@ and extract the binary. To compile for OS-X or Linux ARM clone the github repo a
 
 ### Set-up tunnel server
 
-On `wstun.example.com` start wstunsrv (I'll pick a port other than 80 for sake of example)
+On `wstun.example.com` start WStunnel server (I'll pick a port other than 80 for sake of example)
 
-    $ go build wstunsrv.go ws.go
-    $ ./wstunsrv -port 8080 &
+    $ ./wstunnel srv -port 8080 &
     2014/01/19 09:51:31 Listening on port 8080
     $ curl https://localhost:8080/_health_check
     WSTUNSRV RUNNING
@@ -101,8 +100,7 @@ On `www.example.com` verify that you can access the local web site:
 
 Now set-up the tunnel:
 
-    $ go build wstuncli.go
-    $ ./wstuncli -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
+    $ ./wstunnel clii -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
     2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 
 ### Make a request through the tunnel
@@ -116,10 +114,10 @@ On `client.example.com` use curl to make a request to the web server running on 
 
 ### Using Secure Web Sockets (SSL)
 
-Wstunsrv does not support SSL natively (although that would not be a big change). The recommended
+WStunnel does not support SSL natively (although that would not be a big change). The recommended
 approach for using WSS (web sockets through SSL) is to use nginx, which uses the well-hardened
-openssl library, whereas wstunsrv would be using the non-hardened Go SSL implementation.
-In order to connect to a secure tunnel server from wstuncli use the `wss` URL scheme, e.g.
+openssl library, whereas WStunnel would be using the non-hardened Go SSL implementation.
+In order to connect to a secure tunnel server from WStunnel client use the `wss` URL scheme, e.g.
 `wss://wstun.example.com`.
 Here is a sample nginx configuration:
 
