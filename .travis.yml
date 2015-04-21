@@ -67,7 +67,7 @@ script:
   - export BADGE_FILENAME=cc_badge_${TRAVIS_BRANCH}.svg
   - export BADGE_COLOR=$( if [ ${COVERAGE_INT} -gt 80 ] ; then echo brightgreen ; elif [ ${COVERAGE_INT} -gt 40 ] ; then echo yellow ; else echo red ; fi )
   - wget "http://img.shields.io/badge/coverage-${COVERAGE}%25-${BADGE_COLOR}.svg" -O ${BADGE_FILENAME}
-  - gof3r put -b rs-code-coverage -k ${NAME}/${BADGE_FILENAME} -m x-amz-acl:public-read -m cache-control:no-cache < ${BADGE_FILENAME}
+  - gof3r put -b rs-code-coverage -k ${NAME}/${BADGE_FILENAME} -m x-amz-acl:public-read -m cache-control:no-cache -m content-type:image/svg+xml < ${BADGE_FILENAME}
 
 notifications:
   slack:
