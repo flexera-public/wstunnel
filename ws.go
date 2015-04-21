@@ -6,20 +6,21 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"time"
+
+	"github.com/gorilla/websocket"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 var _ fmt.Formatter
 
-func httpError(w http.ResponseWriter, tok, str string, code int) {
-	log.Printf("%s WS:   ERR status=%d: %s\n", tok, code, str)
-	http.Error(w, str, code)
+func httpError(w http.ResponseWriter, token, err string, code int) {
+	log15.Info("WS:   ERR", "token", token, "status", code, "err", err)
+	http.Error(w, err, code)
 }
 
 const (
@@ -47,7 +48,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logTok := CutToken(Token(token))
-	log.Printf("%s: WS connection from %s", logTok, addr)
+	log15.Info("WS connection", "token", logTok, "addr", addr)
 	// Upgrade to web sockets
 	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
 	if _, ok := err.(websocket.HandshakeError); ok {
@@ -101,7 +102,6 @@ func wsSetPingHandler(ws *websocket.Conn, rs *RemoteServer) {
 func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 	var req *RemoteRequest
 	var err error
-	log_token := CutToken(rs.token)
 	for {
 		// fetch a request
 		select {
@@ -109,18 +109,18 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 			// awesome...
 		case _ = <-ch:
 			// time to close shop
-			log.Printf("%s: WS closing on signal", log_token)
+			rs.log.Info("WS closing on signal")
 			ws.Close()
 			return
 		}
-		//log.Printf("WS->%s#%d start %s\n", req.token, req.id, req.info)
+		//log.Printf("WS->%s#%d start %s", req.token, req.id, req.info)
 		// See whether the request has already expired
 		if req.deadline.Before(time.Now()) {
 			req.replyChan <- ResponseBuffer{
 				err: errors.New("Timeout before forwarding the request"),
 			}
-			log.Printf("%s #%d: WS  SND timeout before sending (%.0fsecs ago)",
-				log_token, req.id, time.Now().Sub(req.deadline).Seconds())
+			req.log.Info("WS  SND timeout before sending", "ago",
+				time.Now().Sub(req.deadline).Seconds())
 			continue
 		}
 		// write the request into the tunnel
@@ -146,11 +146,11 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		log.Printf("%s #%d: WS   SND %s\n", log_token, req.id, req.info)
+		req.log.Info("WS   SND", "info", req.info)
 	}
 	// tell the sender to retry the request
 	req.replyChan <- ResponseBuffer{err: RetryError}
-	log.Printf("%s #%d: WS causes retry\n", log_token, req.id)
+	req.log.Info("WS causes retry")
 	// close up shop
 	ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))
 	time.Sleep(2 * time.Second)
@@ -186,7 +186,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		if err != nil {
 			break
 		}
-		log.Printf("%s #%d: WS   RCV", log_token, id)
+		rs.log.Info("WS   RCV", "id", id)
 		// try to match request
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
@@ -200,15 +200,15 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 			case req.replyChan <- rb:
 				// great!
 			default:
-				log.Printf("%s #%d: WS   RCV can't enqueue response\n", log_token, id)
+				rs.log.Info("WS   RCV can't enqueue response", "id", id)
 			}
 		} else {
-			log.Printf("%s #%d: WS   RCV orphan response\n", log_token, id)
+			rs.log.Info("%s #%d: WS   RCV orphan response", "id", id)
 		}
 	}
 	// print error message
 	if err != nil {
-		log.Printf("%s: WS   closing due to %s\n", log_token, err.Error())
+		log15.Info("WS   closing", "token", log_token, "err", err.Error())
 	}
 	// close up shop
 	ch <- 0 // notify sender

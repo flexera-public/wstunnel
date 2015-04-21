@@ -9,8 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
-	"log/syslog"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -21,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 var _ fmt.Formatter
@@ -48,12 +48,12 @@ type ResponseBuffer struct {
 // A request for a remote server
 type RemoteRequest struct {
 	id         int16               // unique (scope=server) request id
-	token      Token               // rendez-vous token for debug/logging
 	info       string              // http method + uri for debug/logging
 	remoteAddr string              // remote address for debug/logging
 	buffer     *bytes.Buffer       // request buffer to send
 	replyChan  chan ResponseBuffer // response that got returned, capacity=1!
 	deadline   time.Time           // timeout
+	log        log15.Logger
 }
 
 // A remote server
@@ -67,11 +67,13 @@ type RemoteServer struct {
 	requestQueue    chan *RemoteRequest      // queue of requests to be sent
 	requestSet      map[int16]*RemoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
+	log             log15.Logger
 }
 
 // The set of remote servers we know about
 var serverRegistry = make(map[Token]*RemoteServer) // active remote servers indexed by token
 var serverRegistryMutex sync.Mutex
+var serverRegistryReaper sync.Once
 
 // name Lookups
 var whoToken string                      // token for the whois service
@@ -87,7 +89,7 @@ func ipAddrLookup(ipAddr string) (dns, whois string) {
 		names, _ := net.LookupAddr(ipAddr)
 		dns = strings.Join(names, ",")
 		dnsCache[ipAddr] = dns
-		log.Printf("DNS lookup: %s -> %s", ipAddr, dns)
+		log15.Info("DNS lookup", "addr", ipAddr, "dns", dns)
 	}
 	// whois lookup
 	whois, ok = whoisCache[ipAddr]
@@ -116,64 +118,62 @@ func wstunsrv(args []string, listener net.Listener) chan struct{} {
 	srvFlag.Parse(args)
 
 	writePid(*pidf)
-	setLogfile(*logf)
+	setLogfile(*logf, *slog)
 	setWsTimeout(*tout)
 	whoToken = *whoTok
 
-	if *slog != "" {
-		log.Printf("Switching logging to syslog %s", *slog)
-		if *logf != "" {
-			log.Fatal("Can't log to syslog and logfile simultaneously")
-		}
-		f, err := syslog.New(syslog.LOG_INFO, *slog)
-		if err != nil {
-			log.Fatalf("Can't connect to syslog")
-		}
-		log.SetOutput(f)
-		log.SetFlags(0) // syslog already has timestamp
-		log.Printf("Started logging here")
-	}
-
 	if *lookup != "" {
 		names, _ := net.LookupAddr(*lookup)
-		fmt.Printf("DNS   %s -> %s\n", *lookup, strings.Join(names, ","))
-		fmt.Printf("WHOIS %s -> %s\n", *lookup, Whois(*lookup, whoToken))
+		log15.Info("DNS   ", "addr", *lookup, "dns", strings.Join(names, ","))
+		log15.Info("WHOIS ", "addr", *lookup, "dns", Whois(*lookup, whoToken))
 		os.Exit(0)
 	}
 
 	httpTimeout = *httpTout
-	log.Printf("Timeout for remote requests is %d seconds", httpTimeout)
+	log15.Info("Remote request timeout", "timeout", time.Duration(httpTimeout)*time.Second)
 
 	exitChan := make(chan struct{}, 1)
 
-	go idleTunnelReaper()
+	go serverRegistryReaper.Do(idleTunnelReaper)
 
 	//===== HTTP Server =====
 
-	// Reqister handlers with default mux
-	http.HandleFunc("/", payloadHeaderHandler)
-	http.HandleFunc("/_token/", payloadPrefixHandler)
-	http.HandleFunc("/_tunnel", tunnelHandler)
-	http.HandleFunc("/_health_check", checkHandler)
-	http.HandleFunc("/_stats", statsHandler)
+	var httpServer http.Server
 
-	// Now create the HTTP server and let it do its thing
-	if listener == nil {
-		log.Printf("Listening on port %d\n", *port)
-		laddr := fmt.Sprintf(":%d", *port)
-		var err error
-		listener, err = net.Listen("tcp", laddr)
-		if err != nil {
-			log.Fatalf("Cannot listen on %s", laddr)
-		}
-	}
-	server := http.Server{}
-	go server.Serve(listener)
+	// Reqister handlers with default mux
+	httpMux := http.NewServeMux()
+	httpMux.HandleFunc("/", payloadHeaderHandler)
+	httpMux.HandleFunc("/_token/", payloadPrefixHandler)
+	httpMux.HandleFunc("/_tunnel", tunnelHandler)
+	httpMux.HandleFunc("/_health_check", checkHandler)
+	httpMux.HandleFunc("/_stats", statsHandler)
+	httpServer.Handler = httpMux
+	//httpServer.ErrorLog = log15Logger // would like to set this somehow...
+
 	// Read/Write timeouts disabled for now due to bug:
 	// https://code.google.com/p/go/issues/detail?id=6410
 	// https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
 	//ReadTimeout: time.Duration(cliTout) * time.Second, // read and idle timeout
 	//WriteTimeout: time.Duration(cliTout) * time.Second, // timeout while writing response
+
+	// Now create the listener and hook it all up
+	if listener == nil {
+		log15.Info("Listening", "port", *port)
+		laddr := fmt.Sprintf(":%d", *port)
+		var err error
+		listener, err = net.Listen("tcp", laddr)
+		if err != nil {
+			log15.Crit("Cannot listen", "addr", laddr)
+			os.Exit(1)
+		}
+	} else {
+		log15.Info("Listener", "addr", listener.Addr().String())
+	}
+	go func() {
+		log15.Debug("Server started")
+		httpServer.Serve(listener)
+		log15.Debug("Server ended")
+	}()
 
 	go func() {
 		<-exitChan
@@ -257,7 +257,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 func payloadHeaderHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get("X-Token")
 	if token == "" {
-		log.Printf("Missing X-Token header: %#v", r)
+		log15.Info("Missing X-Token header", "req", r)
 		http.Error(w, "Missing X-Token header", 400)
 		return
 	}
@@ -273,7 +273,7 @@ func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
 	reqUrl := r.URL.String()
 	m := matchToken.FindStringSubmatch(reqUrl)
 	if len(m) != 3 {
-		log.Printf("Missing token or URI: %s", reqUrl)
+		log15.Info("Missing token or URI", "url", reqUrl)
 		http.Error(w, "Missing token in URI", 400)
 		return
 	}
@@ -285,8 +285,9 @@ func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
 func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 	// create the request object
 	req := MakeRequest(r)
-	req.token = token
-	log_token := CutToken(token)
+	req.log = log15.New("token", CutToken(token))
+	//req.token = token
+	//log_token := CutToken(token)
 
 	req.remoteAddr = r.Header.Get("X-Forwarded-For")
 	if req.remoteAddr == "" {
@@ -303,39 +304,40 @@ Tries:
 		// enqueue request
 		err := rs.AddRequest(req)
 		if err != nil {
-			log.Printf("%s: HTTP RCV %s %s (%s) RET status=504 error: %s",
-				log_token, r.Method, r.URL, req.remoteAddr, err.Error())
+			req.log.Info("HTTP RCV",
+				"verb", r.Method, "url", r.URL, "status", "504",
+				"addr", req.remoteAddr, "err", err.Error())
 			http.Error(w, err.Error(), 504)
 			break Tries
 		}
+		req.log = req.log.New("id", req.id)
 		try := ""
 		if tries > 1 {
 			try = fmt.Sprintf("(attempt #%d)", tries)
 		}
-		log.Printf("%s #%d: HTTP RCV %s %s (%s) %s", log_token, req.id, r.Method, r.URL,
-			req.remoteAddr, try)
+		req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
+			"addr", req.remoteAddr, "try", try)
 		// wait for response
 		select {
 		case resp := <-req.replyChan:
 			// if there's no error just respond
 			if resp.err == nil {
 				code := WriteResponse(w, resp.response)
-				log.Printf("%s #%d: HTTP RET status=%d\n", log_token, req.id, code)
+				req.log.Info("HTTP RET", "status", code)
 				break Tries
 			}
 			// if it's a non-retryable error then write the error
 			if resp.err != RetryError {
-				log.Printf("%s #%d: HTTP RET status=504 error=%s\n",
-					log_token, req.id, resp.err.Error())
+				req.log.Info("HTTP RET",
+					"status", "504", "err", resp.err.Error())
 				http.Error(w, resp.err.Error(), 504)
 				break Tries
 			}
 			// else we're gonna retry
-			log.Printf("%s #%d: retrying %s %s\n", log_token, req.id, r.Method, r.URL)
+			req.log.Info("retrying", "verb", r.Method, "url", r.URL)
 		case <-time.After(time.Duration(httpTimeout) * time.Second):
 			// it timed out...
-			log.Printf("%s #%d: HTTP RET status=504 error=Tunnel timeout",
-				log_token, req.id)
+			req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
 			http.Error(w, "Tunnel timeout", 504)
 			break Tries
 		}
@@ -377,13 +379,14 @@ func GetRemoteServer(token Token) *RemoteServer {
 		token:        token,
 		requestQueue: make(chan *RemoteRequest, MAX_REQ),
 		requestSet:   make(map[int16]*RemoteRequest),
+		log:          log15.New("token", CutToken(token)),
 	}
 	serverRegistry[token] = rs
 	return rs
 }
 
 func (rs *RemoteServer) AbortRequests() {
-	logToken := CutToken(rs.token)
+	//logToken := CutToken(rs.token)
 	// end any requests that are queued
 l:
 	for {
@@ -391,8 +394,7 @@ l:
 		case req := <-rs.requestQueue:
 			select {
 			case req.replyChan <- ResponseBuffer{err: RetryError}: // non-blocking send
-				log.Printf("%s %d: WS tunnel inactive timeout causes retry",
-					logToken, req.id)
+				req.log.Info("WS tunnel inactive timeout causes retry")
 			default:
 			}
 		default:
@@ -400,7 +402,7 @@ l:
 		}
 	}
 	idle := time.Since(rs.lastActivity).Minutes()
-	log.Printf("%s WS tunnel closed due to inactivity for %.0f minutes", logToken, idle)
+	rs.log.Info("WS tunnel closed", "inactive[min]", idle)
 }
 
 func (rs *RemoteServer) AddRequest(req *RemoteRequest) error {
@@ -453,7 +455,7 @@ var censoredHeaders = []string{
 func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 	resp, err := http.ReadResponse(bufio.NewReader(buf), nil)
 	if err != nil {
-		log.Printf("WriteResponse: can't parse incoming response: %s", err)
+		log15.Info("WriteResponse: can't parse incoming response", "err", err)
 		w.WriteHeader(506)
 		return 506
 	}
@@ -469,6 +471,7 @@ func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 
 // idleTunnelReaper should be run in a goroutine to kill tunnels that are idle for a long time
 func idleTunnelReaper() {
+	log15.Debug("idleTunnelReaper started")
 	for {
 		serverRegistryMutex.Lock()
 		for _, rs := range serverRegistry {
@@ -483,4 +486,5 @@ func idleTunnelReaper() {
 		serverRegistryMutex.Unlock()
 		time.Sleep(time.Minute)
 	}
+	log15.Debug("idleTunnelReaper ended")
 }

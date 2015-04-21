@@ -5,9 +5,13 @@ package main
 // Omega: Alt+937
 
 import (
+	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -22,14 +26,17 @@ var _ = Describe("Testing sequential requests", func() {
 	var server *ghttp.Server
 	var cliStop, srvStop chan struct{}
 	var wstunUrl string
-	var wstunToken = "test567890123456"
+	var wstunToken string
 
 	BeforeEach(func() {
+		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 		server = ghttp.NewServer()
+		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
 		serverBasics(server)
 
 		l, _ := net.Listen("tcp", "127.0.0.1:0")
 		srvStop = wstunsrv([]string{}, l)
+		fmt.Fprintf(os.Stderr, "Server started\n")
 		cliStop = wstuncli([]string{
 			"-token", wstunToken,
 			"-tunnel", "ws://" + l.Addr().String(),
