@@ -258,11 +258,16 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 	xHost := req.Header.Get("X-Host")
 	if xHost != "" {
 		if serverRe == nil {
-			log15.Info("handleWsRequests: ignoring x-host header, no regexp provided")
+			log15.Info("handleWsRequests: got x-host header but no regexp provided")
+			writeResponseMessage(ws, id, concoctResponse(req,
+				"X-Host header disallowed", 403))
+			return
 		} else if serverRe.FindString(xHost) == xHost {
 			host = xHost
 		} else {
-			log15.Info("handleWsRequests: x-host disallowed", "x-host", xHost)
+			log15.Info("handleWsRequests: x-host disallowed by regexp", "x-host", xHost)
+			writeResponseMessage(ws, id, concoctResponse(req,
+				"X-Host header does not match regexp", 403))
 			return
 		}
 	}
@@ -273,6 +278,8 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 	req.URL, err = url.Parse(fmt.Sprintf("%s%s", host, req.RequestURI))
 	if err != nil {
 		log15.Warn("handleWsRequests: cannot parse requestURI", "err", err.Error())
+		writeResponseMessage(ws, id, concoctResponse(req,
+			"Cannot parse request URI", 400))
 		return
 	}
 	req.RequestURI = ""
@@ -298,15 +305,22 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 		"req", strings.Replace(string(dump), "\r\n", " || ", -1))
 	resp, err := client.Do(req)
 	if err != nil {
-		resp = concoctResponse(req, err.Error(), 502)
 		//dump2, _ := httputil.DumpResponse(resp, true)
 		//log15.Info("handleWsRequests: request error", "err", err.Error(),
 		//	"req", string(dump), "resp", string(dump2))
 		log15.Info("handleWsRequests: request error", "err", err.Error())
-	} else {
-		log15.Info("handleWsRequests: response", "status", resp.Status)
+		writeResponseMessage(ws, id, concoctResponse(req, err.Error(), 502))
+		return
 	}
+	log15.Info("handleWsRequests: response", "status", resp.Status)
 	defer resp.Body.Close()
+
+	writeResponseMessage(ws, id, resp)
+	log15.Info("handleWsRequests: done")
+}
+
+// Write the response message to the websocket
+func writeResponseMessage(ws *websocket.Conn, id int16, resp *http.Response) {
 	// Get writer's lock
 	wsWriterMutex.Lock()
 	defer wsWriterMutex.Unlock()
@@ -343,7 +357,6 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 		ws.Close()
 		return
 	}
-	log15.Info("handleWsRequests: done")
 }
 
 // Create an http Response from scratch, there must be a better way that this but I
