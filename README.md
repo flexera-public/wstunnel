@@ -112,6 +112,18 @@ On `client.example.com` use curl to make a request to the web server running on 
     $ curl '-HX-Token:my_b!g_$secret' https://wstun.example.com:8080/some/web/page
     <html> .......
 
+### Targeting multiple web servers
+
+The above example tells WStunnel client to only forward requests to http://localhost. It is possible to allow the wstunnel to target multiple hosts too. For this purpose the original HTTP client must pass an X-Host header to name the host and WStunnel client must be configured with a regexp that limits the destination web server hostnames it allows. For example, to allow access to `*.some.example.com` over https use:
+- `wstunnel cli -regexp 'https://.*\.some\.example\.com' -server https://default.some.example.com ...`
+- `curl '-HX-Host: https://www.some.example.com'`
+
+Or to allow access to www.example.com and blog.example.com over http you might use:
+- `wstunnel cli -regexp 'http://(www\.example\.com|blog\.example\.com)' -server http://www.example.com ...`
+- `curl '-HX-Host: http://blog.example.com'`
+
+Note the use of -server and -regexp, this is because the server named in -server is used when there is no X-Host header. The host in the -server option does not have to match the regexp but it is recommended for it match.
+
 ### Using Secure Web Sockets (SSL)
 
 WStunnel does not support SSL natively (although that would not be a big change). The recommended
