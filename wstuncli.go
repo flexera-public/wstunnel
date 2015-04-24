@@ -260,14 +260,14 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 		if serverRe == nil {
 			log15.Info("handleWsRequests: got x-host header but no regexp provided")
 			writeResponseMessage(ws, id, concoctResponse(req,
-				"X-Host header disallowed", 403))
+				"X-Host header disallowed by wstunnel cli (no -regexp option)", 403))
 			return
 		} else if serverRe.FindString(xHost) == xHost {
 			host = xHost
 		} else {
 			log15.Info("handleWsRequests: x-host disallowed by regexp", "x-host", xHost)
 			writeResponseMessage(ws, id, concoctResponse(req,
-				"X-Host header does not match regexp", 403))
+				"X-Host header does not match regexp in wstunnel cli", 403))
 			return
 		}
 	}
@@ -282,6 +282,7 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 			"Cannot parse request URI", 400))
 		return
 	}
+	req.Host = req.URL.Host // we delete req.Header["Host"] further down
 	req.RequestURI = ""
 	log15.Info("handleWsRequests: issuing request", "url", req.URL.String())
 

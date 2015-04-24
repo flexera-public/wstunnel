@@ -49,12 +49,17 @@ var _ = Describe("Testing xhost requests", func() {
 		server.Close()
 	})
 
-	It("Respects host header", func() {
+	It("Respects x-host header", func() {
 		cliStop = cliStart("http://localhost:123", `http://127\.0\.0\.[0-9]:[0-9]+`)
 		server.AppendHandlers(
 			ghttp.CombineHandlers(
 				ghttp.VerifyRequest("GET", "/hello"),
 				//ghttp.VerifyHeaderKV("Host", server.URL()),
+				//func(w http.ResponseWriter, req *http.Request) {
+				//	dump, _ := httputil.DumpRequest(req, false)
+				//	fmt.Fprintf(os.Stderr, "Dump: %s\n",
+				//		strings.Replace(string(dump), "\r\n", " || ", -1))
+				//},
 				ghttp.RespondWith(200, `HOSTED`,
 					http.Header{"Content-Type": []string{"text/world"}}),
 			),
@@ -87,7 +92,7 @@ var _ = Describe("Testing xhost requests", func() {
 		Ω(err).ShouldNot(HaveOccurred())
 		respBody, err := ioutil.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
-		Ω(string(respBody)).Should(Equal("X-Host header does not match regexp"))
+		Ω(string(respBody)).Should(ContainSubstring("X-Host header does not match regexp"))
 		Ω(resp.StatusCode).Should(Equal(403))
 	})
 
