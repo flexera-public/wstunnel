@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -54,12 +55,10 @@ var _ = Describe("Testing xhost requests", func() {
 		server.AppendHandlers(
 			ghttp.CombineHandlers(
 				ghttp.VerifyRequest("GET", "/hello"),
-				//ghttp.VerifyHeaderKV("Host", server.URL()),
-				//func(w http.ResponseWriter, req *http.Request) {
-				//	dump, _ := httputil.DumpRequest(req, false)
-				//	fmt.Fprintf(os.Stderr, "Dump: %s\n",
-				//		strings.Replace(string(dump), "\r\n", " || ", -1))
-				//},
+				func(w http.ResponseWriter, req *http.Request) {
+					Ω(req.Header.Get("Host")).Should(Equal(""))
+					Ω(req.Host).Should(Equal(strings.TrimPrefix(server.URL(), "http://")))
+				},
 				ghttp.RespondWith(200, `HOSTED`,
 					http.Header{"Content-Type": []string{"text/world"}}),
 			),
