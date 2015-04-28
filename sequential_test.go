@@ -19,15 +19,14 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
+	"github.com/rightscale/wstunnel/tunnel"
 )
-
-func serverBasics(server *ghttp.Server) {
-}
 
 var _ = Describe("Testing sequential requests", func() {
 
 	var server *ghttp.Server
-	var cliStop, srvStop chan struct{}
+	var wstunsrv *tunnel.WSTunnelServer
+	var wstuncli *tunnel.WSTunnelClient
 	var wstunUrl string
 	var wstunToken string
 
@@ -35,21 +34,22 @@ var _ = Describe("Testing sequential requests", func() {
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 		server = ghttp.NewServer()
 		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
-		serverBasics(server)
 
 		l, _ := net.Listen("tcp", "127.0.0.1:0")
-		srvStop = wstunsrv([]string{}, l)
+		wstunsrv = tunnel.NewWSTunnelServer([]string{})
+		wstunsrv.Start(l)
 		fmt.Fprintf(os.Stderr, "Server started\n")
-		cliStop = wstuncli([]string{
+		wstuncli = tunnel.NewWSTunnelClient([]string{
 			"-token", wstunToken,
 			"-tunnel", "ws://" + l.Addr().String(),
 			"-server", server.URL(),
 		})
+		wstuncli.Start()
 		wstunUrl = "http://" + l.Addr().String()
 	})
 	AfterEach(func() {
-		cliStop <- struct{}{}
-		srvStop <- struct{}{}
+		wstuncli.Stop()
+		wstunsrv.Stop()
 		server.Close()
 	})
 

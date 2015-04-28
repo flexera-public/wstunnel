@@ -1,6 +1,6 @@
 // Copyright (c) 2014 RightScale, Inc. - see LICENSE
 
-package main
+package tunnel
 
 import (
 	"bufio"
@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rightscale/wstunnel/whois"
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
@@ -38,42 +39,47 @@ const (
 	MIN_TOKEN_LEN = 16 // min number of chars in a token
 )
 
-type Token string
+type token string
 
-type ResponseBuffer struct {
+type responseBuffer struct {
 	err      error
 	response *bytes.Buffer
 }
 
 // A request for a remote server
-type RemoteRequest struct {
+type remoteRequest struct {
 	id         int16               // unique (scope=server) request id
 	info       string              // http method + uri for debug/logging
 	remoteAddr string              // remote address for debug/logging
 	buffer     *bytes.Buffer       // request buffer to send
-	replyChan  chan ResponseBuffer // response that got returned, capacity=1!
+	replyChan  chan responseBuffer // response that got returned, capacity=1!
 	deadline   time.Time           // timeout
 	log        log15.Logger
 }
 
 // A remote server
-type RemoteServer struct {
-	token           Token                    // rendez-vous token for debug/logging
+type remoteServer struct {
+	token           token                    // rendez-vous token for debug/logging
 	lastId          int16                    // id of last request
 	lastActivity    time.Time                // last activity on tunnel
 	remoteAddr      string                   // last remote addr of tunnel (debug)
 	remoteName      string                   // reverse DNS resolution of remoteAddr
 	remoteWhois     string                   // whois lookup of remoteAddr
-	requestQueue    chan *RemoteRequest      // queue of requests to be sent
-	requestSet      map[int16]*RemoteRequest // all requests in queue/flight indexed by ID
+	requestQueue    chan *remoteRequest      // queue of requests to be sent
+	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             log15.Logger
 }
 
-// The set of remote servers we know about
-var serverRegistry = make(map[Token]*RemoteServer) // active remote servers indexed by token
-var serverRegistryMutex sync.Mutex
-var serverRegistryReaper sync.Once
+type WSTunnelServer struct {
+	Port                int                     // port to listen on
+	WSTimeout           time.Duration           // timeout on websockets
+	HttpTimeout         time.Duration           // timeout for HTTP requests
+	Log                 log15.Logger            // logger with "pkg=WStunsrv"
+	exitChan            chan struct{}           // channel to tell the tunnel goroutines to end
+	serverRegistry      map[token]*remoteServer // active remote servers indexed by token
+	serverRegistryMutex sync.Mutex              // mutex to protect map
+}
 
 // name Lookups
 var whoToken string                      // token for the whois service
@@ -81,7 +87,7 @@ var dnsCache = make(map[string]string)   // ip_address -> reverse DNS lookup
 var whoisCache = make(map[string]string) // ip_address -> whois lookup
 var cacheMutex sync.Mutex
 
-func ipAddrLookup(ipAddr string) (dns, whois string) {
+func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 	dns, ok := dnsCache[ipAddr]
@@ -89,64 +95,71 @@ func ipAddrLookup(ipAddr string) (dns, whois string) {
 		names, _ := net.LookupAddr(ipAddr)
 		dns = strings.Join(names, ",")
 		dnsCache[ipAddr] = dns
-		log15.Info("DNS lookup", "addr", ipAddr, "dns", dns)
+		log.Info("DNS lookup", "addr", ipAddr, "dns", dns)
 	}
 	// whois lookup
-	whois, ok = whoisCache[ipAddr]
+	who, ok = whoisCache[ipAddr]
 	if !ok && whoToken != "" {
-		whois = Whois(ipAddr, whoToken)
-		whoisCache[ipAddr] = whois
+		who = whois.Whois(ipAddr, whoToken)
+		whoisCache[ipAddr] = who
 	}
 	return
 }
 
 //===== Main =====
 
-var httpTimeout int
+func NewWSTunnelServer(args []string) *WSTunnelServer {
+	wstunSrv := WSTunnelServer{}
 
-func wstunsrv(args []string, listener net.Listener) chan struct{} {
 	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
-	var port *int = srvFlag.Int("port", 80, "port for http/ws server to listen on")
+	srvFlag.IntVar(&wstunSrv.Port, "port", 80, "port for http/ws server to listen on")
 	var pidf *string = srvFlag.String("pidfile", "", "path for pidfile")
 	var logf *string = srvFlag.String("logfile", "", "path for log file")
 	var tout *int = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
 	var httpTout *int = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
 	var slog *string = srvFlag.String("syslog", "", "syslog facility to log to")
 	var whoTok *string = srvFlag.String("robowhois", "", "robowhois.com API token")
-	var lookup *string = srvFlag.String("lookup", "", "IP address to lookup in robowhois (doesn't run tunnel)")
 
 	srvFlag.Parse(args)
 
 	writePid(*pidf)
-	setLogfile(*logf, *slog)
-	setWsTimeout(*tout)
+	wstunSrv.Log = makeLogger("WStunsrv", *logf, *slog)
+	wstunSrv.WSTimeout = calcWsTimeout(*tout)
 	whoToken = *whoTok
 
-	if *lookup != "" {
-		names, _ := net.LookupAddr(*lookup)
-		log15.Info("DNS   ", "addr", *lookup, "dns", strings.Join(names, ","))
-		log15.Info("WHOIS ", "addr", *lookup, "dns", Whois(*lookup, whoToken))
-		os.Exit(0)
+	wstunSrv.HttpTimeout = time.Duration(*httpTout) * time.Second
+	wstunSrv.Log.Info("Remote request timeout", "timeout", wstunSrv.HttpTimeout)
+
+	wstunSrv.exitChan = make(chan struct{}, 1)
+
+	return &wstunSrv
+}
+
+func (t *WSTunnelServer) Start(listener net.Listener) {
+	if t.serverRegistry != nil {
+		return // already started...
 	}
-
-	httpTimeout = *httpTout
-	log15.Info("Remote request timeout", "timeout", time.Duration(httpTimeout)*time.Second)
-
-	exitChan := make(chan struct{}, 1)
-
-	go serverRegistryReaper.Do(idleTunnelReaper)
+	t.serverRegistry = make(map[token]*remoteServer)
+	go t.idleTunnelReaper()
 
 	//===== HTTP Server =====
 
 	var httpServer http.Server
 
+	// Convert a handler that takes a tunnel as first arg to a std http handler
+	wrap := func(h func(t *WSTunnelServer, w http.ResponseWriter, r *http.Request)) func(http.ResponseWriter, *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
+			h(t, w, r)
+		}
+	}
+
 	// Reqister handlers with default mux
 	httpMux := http.NewServeMux()
-	httpMux.HandleFunc("/", payloadHeaderHandler)
-	httpMux.HandleFunc("/_token/", payloadPrefixHandler)
-	httpMux.HandleFunc("/_tunnel", tunnelHandler)
-	httpMux.HandleFunc("/_health_check", checkHandler)
-	httpMux.HandleFunc("/_stats", statsHandler)
+	httpMux.HandleFunc("/", wrap(payloadHeaderHandler))
+	httpMux.HandleFunc("/_token/", wrap(payloadPrefixHandler))
+	httpMux.HandleFunc("/_tunnel", wrap(tunnelHandler))
+	httpMux.HandleFunc("/_health_check", wrap(checkHandler))
+	httpMux.HandleFunc("/_stats", wrap(statsHandler))
 	httpServer.Handler = httpMux
 	//httpServer.ErrorLog = log15Logger // would like to set this somehow...
 
@@ -158,53 +171,54 @@ func wstunsrv(args []string, listener net.Listener) chan struct{} {
 
 	// Now create the listener and hook it all up
 	if listener == nil {
-		log15.Info("Listening", "port", *port)
-		laddr := fmt.Sprintf(":%d", *port)
+		t.Log.Info("Listening", "port", t.Port)
+		laddr := fmt.Sprintf(":%d", t.Port)
 		var err error
 		listener, err = net.Listen("tcp", laddr)
 		if err != nil {
-			log15.Crit("Cannot listen", "addr", laddr)
+			t.Log.Crit("Cannot listen", "addr", laddr)
 			os.Exit(1)
 		}
 	} else {
-		log15.Info("Listener", "addr", listener.Addr().String())
+		t.Log.Info("Listener", "addr", listener.Addr().String())
 	}
 	go func() {
-		log15.Debug("Server started")
+		t.Log.Debug("Server started")
 		httpServer.Serve(listener)
-		log15.Debug("Server ended")
+		t.Log.Debug("Server ended")
 	}()
 
 	go func() {
-		<-exitChan
+		<-t.exitChan
 		listener.Close()
 	}()
+}
 
-	return exitChan
+func (t *WSTunnelServer) Stop() {
+	t.exitChan <- struct{}{}
 }
 
 //===== Handlers =====
 
 // Handler for health check
-func checkHandler(w http.ResponseWriter, r *http.Request) {
+func checkHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "WSTUNSRV RUNNING")
 }
 
 // Handler for stats
-func statsHandler(w http.ResponseWriter, r *http.Request) {
+func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// let's start by doing a GC to ensure we reclaim file descriptors (?)
 	runtime.GC()
 
 	// make a copy of the set of remoteServers
-	serverRegistryMutex.Lock()
-	rss := make([]*RemoteServer, 0, len(serverRegistry))
-	for _, rs := range serverRegistry {
+	t.serverRegistryMutex.Lock()
+	rss := make([]*remoteServer, 0, len(t.serverRegistry))
+	for _, rs := range t.serverRegistry {
 		rss = append(rss, rs)
 	}
-	serverRegistryMutex.Unlock()
-
 	// print out the number of tunnels
-	fmt.Fprintf(w, "tunnels=%d\n", len(serverRegistry))
+	fmt.Fprintf(w, "tunnels=%d\n", len(t.serverRegistry))
+	t.serverRegistryMutex.Unlock()
 
 	// cut off here if not called from localhost
 	addr := r.Header.Get("X-Forwarded-For")
@@ -219,7 +233,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 	reqPending := 0
 	badTunnels := 0
 	for i, t := range rss {
-		fmt.Fprintf(w, "\ntunnel%02d_token=%s\n", i, CutToken(t.token))
+		fmt.Fprintf(w, "\ntunnel%02d_token=%s\n", i, cutToken(t.token))
 		fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(t.requestSet))
 		reqPending += len(t.requestSet)
 		fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, t.remoteAddr)
@@ -254,14 +268,14 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 
 // payloadHeaderHandler handles payload requests with the tunnel token in the Host header.
 // Payload requests are requests that are to be forwarded through the tunnel.
-func payloadHeaderHandler(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("X-Token")
-	if token == "" {
-		log15.Info("Missing X-Token header", "req", r)
+func payloadHeaderHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
+	tok := r.Header.Get("X-Token")
+	if tok == "" {
+		t.Log.Info("HTTP Missing X-Token header", "req", r)
 		http.Error(w, "Missing X-Token header", 400)
 		return
 	}
-	payloadHandler(w, r, Token(token))
+	payloadHandler(t, w, r, token(tok))
 }
 
 // Regexp for extracting the tunnel token from the URI
@@ -269,25 +283,25 @@ var matchToken = regexp.MustCompile("^/_token/([^/]+)(/.*)")
 
 // payloadPrefixHandler handles payload requests with the tunnel token in a URI prefix.
 // Payload requests are requests that are to be forwarded through the tunnel.
-func payloadPrefixHandler(w http.ResponseWriter, r *http.Request) {
+func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	reqUrl := r.URL.String()
 	m := matchToken.FindStringSubmatch(reqUrl)
 	if len(m) != 3 {
-		log15.Info("Missing token or URI", "url", reqUrl)
+		t.Log.Info("HTTP Missing token or URI", "url", reqUrl)
 		http.Error(w, "Missing token in URI", 400)
 		return
 	}
 	r.URL, _ = url.Parse(m[2])
-	payloadHandler(w, r, Token(m[1]))
+	payloadHandler(t, w, r, token(m[1]))
 }
 
 // payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
-func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
+func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, tok token) {
 	// create the request object
-	req := MakeRequest(r)
-	req.log = log15.New("token", CutToken(token))
-	//req.token = token
-	//log_token := CutToken(token)
+	req := makeRequest(r, t.HttpTimeout)
+	req.log = t.Log.New("token", cutToken(tok))
+	//req.token = tok
+	//log_token := cutToken(tok)
 
 	req.remoteAddr = r.Header.Get("X-Forwarded-For")
 	if req.remoteAddr == "" {
@@ -295,11 +309,11 @@ func payloadHandler(w http.ResponseWriter, r *http.Request, token Token) {
 	}
 
 	// repeatedly try to get a response
-	var rs *RemoteServer
+	var rs *remoteServer
 Tries:
 	for tries := 1; tries <= 3; tries += 1 {
 		// get a hold of the remote server
-		rs = GetRemoteServer(Token(token))
+		rs = t.getRemoteServer(token(tok))
 
 		// enqueue request
 		err := rs.AddRequest(req)
@@ -322,7 +336,7 @@ Tries:
 		case resp := <-req.replyChan:
 			// if there's no error just respond
 			if resp.err == nil {
-				code := WriteResponse(w, resp.response)
+				code := writeResponse(w, resp.response)
 				req.log.Info("HTTP RET", "status", code)
 				break Tries
 			}
@@ -334,8 +348,8 @@ Tries:
 				break Tries
 			}
 			// else we're gonna retry
-			req.log.Info("retrying", "verb", r.Method, "url", r.URL)
-		case <-time.After(time.Duration(httpTimeout) * time.Second):
+			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
+		case <-time.After(time.Duration(t.HttpTimeout) * time.Second):
 			// it timed out...
 			req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
 			http.Error(w, "Tunnel timeout", 504)
@@ -348,9 +362,9 @@ Tries:
 }
 
 // tunnelHandler handles tunnel establishment requests
-func tunnelHandler(w http.ResponseWriter, r *http.Request) {
+func tunnelHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
-		wsHandler(w, r)
+		wsHandler(t, w, r)
 	} else {
 		http.Error(w, "Only GET requests are supported", 400)
 	}
@@ -361,39 +375,39 @@ func tunnelHandler(w http.ResponseWriter, r *http.Request) {
 // Sanitize the token for logging
 var cutRe = regexp.MustCompile("[^_]{16}==$")
 
-func CutToken(token Token) string {
-	return cutRe.ReplaceAllString(string(token), "...")
+func cutToken(tok token) string {
+	return cutRe.ReplaceAllString(string(tok), "...")
 }
 
-func GetRemoteServer(token Token) *RemoteServer {
-	serverRegistryMutex.Lock()
-	defer serverRegistryMutex.Unlock()
+func (t *WSTunnelServer) getRemoteServer(tok token) *remoteServer {
+	t.serverRegistryMutex.Lock()
+	defer t.serverRegistryMutex.Unlock()
 
 	// lookup and return existing remote server
-	rs, ok := serverRegistry[token]
+	rs, ok := t.serverRegistry[tok]
 	if ok {
 		return rs
 	}
 	// construct new remote server
-	rs = &RemoteServer{
-		token:        token,
-		requestQueue: make(chan *RemoteRequest, MAX_REQ),
-		requestSet:   make(map[int16]*RemoteRequest),
-		log:          log15.New("token", CutToken(token)),
+	rs = &remoteServer{
+		token:        tok,
+		requestQueue: make(chan *remoteRequest, MAX_REQ),
+		requestSet:   make(map[int16]*remoteRequest),
+		log:          log15.New("token", cutToken(tok)),
 	}
-	serverRegistry[token] = rs
+	t.serverRegistry[tok] = rs
 	return rs
 }
 
-func (rs *RemoteServer) AbortRequests() {
-	//logToken := CutToken(rs.token)
+func (rs *remoteServer) AbortRequests() {
+	//logToken := cutToken(rs.tok)
 	// end any requests that are queued
 l:
 	for {
 		select {
 		case req := <-rs.requestQueue:
 			select {
-			case req.replyChan <- ResponseBuffer{err: RetryError}: // non-blocking send
+			case req.replyChan <- responseBuffer{err: RetryError}: // non-blocking send
 				req.log.Info("WS tunnel inactive timeout causes retry")
 			default:
 			}
@@ -405,7 +419,7 @@ l:
 	rs.log.Info("WS tunnel closed", "inactive[min]", idle)
 }
 
-func (rs *RemoteServer) AddRequest(req *RemoteRequest) error {
+func (rs *remoteServer) AddRequest(req *remoteRequest) error {
 	rs.requestSetMutex.Lock()
 	defer rs.requestSetMutex.Unlock()
 	if req.id < 0 {
@@ -422,22 +436,22 @@ func (rs *RemoteServer) AddRequest(req *RemoteRequest) error {
 	}
 }
 
-func (rs *RemoteServer) RetireRequest(req *RemoteRequest) {
+func (rs *remoteServer) RetireRequest(req *remoteRequest) {
 	rs.requestSetMutex.Lock()
 	defer rs.requestSetMutex.Unlock()
 	delete(rs.requestSet, req.id)
 	// TODO: should we close the channel? problem is that a concurrent send on it causes a panic
 }
 
-func MakeRequest(r *http.Request) *RemoteRequest {
+func makeRequest(r *http.Request, httpTimeout time.Duration) *remoteRequest {
 	buf := &bytes.Buffer{}
 	_ = r.Write(buf)
-	return &RemoteRequest{
+	return &remoteRequest{
 		id:        -1,
 		info:      r.Method + " " + r.URL.String(),
 		buffer:    buf,
-		replyChan: make(chan ResponseBuffer, 10),
-		deadline:  time.Now().Add(time.Duration(httpTimeout) * time.Second),
+		replyChan: make(chan responseBuffer, 10),
+		deadline:  time.Now().Add(httpTimeout),
 	}
 
 }
@@ -452,7 +466,7 @@ var censoredHeaders = []string{
 }
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
+func writeResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 	resp, err := http.ReadResponse(bufio.NewReader(buf), nil)
 	if err != nil {
 		log15.Info("WriteResponse: can't parse incoming response", "err", err)
@@ -470,21 +484,21 @@ func WriteResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 }
 
 // idleTunnelReaper should be run in a goroutine to kill tunnels that are idle for a long time
-func idleTunnelReaper() {
-	log15.Debug("idleTunnelReaper started")
+func (t *WSTunnelServer) idleTunnelReaper() {
+	t.Log.Debug("idleTunnelReaper started")
 	for {
-		serverRegistryMutex.Lock()
-		for _, rs := range serverRegistry {
+		t.serverRegistryMutex.Lock()
+		for _, rs := range t.serverRegistry {
 			if time.Since(rs.lastActivity) > 60*time.Minute {
 				go func() {
 					// unlink so new tunnels/tokens use a new RemoteServer object
-					delete(serverRegistry, rs.token)
+					delete(t.serverRegistry, rs.token)
 					rs.AbortRequests()
 				}()
 			}
 		}
-		serverRegistryMutex.Unlock()
+		t.serverRegistryMutex.Unlock()
 		time.Sleep(time.Minute)
 	}
-	//log15.Debug("idleTunnelReaper ended")
+	//t.Log.Debug("idleTunnelReaper ended")
 }

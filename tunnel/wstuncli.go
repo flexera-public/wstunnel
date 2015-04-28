@@ -21,11 +21,12 @@
 // Another limitation is that it keeps a single websocket open and can thus get stuck for
 // many seconds until the timeout on the websocket hits and a new one is opened.
 
-package main
+package tunnel
 
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"os"
 	"regexp"
 	//"crypto/tls"
@@ -47,71 +48,90 @@ import (
 
 var _ fmt.Formatter
 
+type WSTunnelClient struct {
+	Token    string          // Rendez-vous token
+	Tunnel   string          // websocket server to connect to (ws[s]://hostname:port)
+	Server   string          // local HTTP(S) server to send received requests to (default server)
+	Regexp   *regexp.Regexp  // regexp for allowed local HTTP(S) servers
+	Insecure bool            // accept self-signed SSL certs from local HTTPS servers
+	Timeout  time.Duration   // timeout on websocket
+	Log      log15.Logger    // logger with "pkg=WStuncli"
+	exitChan chan struct{}   // channel to tell the tunnel goroutines to end
+	ws       *websocket.Conn // websocket connection
+}
+
 //===== Main =====
 
-func wstuncli(args []string) chan struct{} {
+func NewWSTunnelClient(args []string) *WSTunnelClient {
+	wstunCli := WSTunnelClient{}
+
 	var cliFlag = flag.NewFlagSet("client", flag.ExitOnError)
-	var token *string = cliFlag.String("token", "", "rendez-vous token identifying this server")
-	var tunnel *string = cliFlag.String("tunnel", "",
+	cliFlag.StringVar(&wstunCli.Token, "token", "",
+		"rendez-vous token identifying this server")
+	cliFlag.StringVar(&wstunCli.Tunnel, "tunnel", "",
 		"websocket server ws[s]://hostname:port to connect to")
-	var server *string = cliFlag.String("server", "http://localhost",
+	cliFlag.StringVar(&wstunCli.Server, "server", "http://localhost",
 		"local HTTP(S) server to send received requests to")
-	var serverRegexp *string = cliFlag.String("regexp", "",
+	cliFlag.BoolVar(&wstunCli.Insecure, "insecure", false,
+		"accept self-signed SSL certs from local HTTPS servers")
+	var sre *string = cliFlag.String("regexp", "",
 		"regexp for local HTTP(S) server to allow sending received requests to")
+	var tout *int = cliFlag.Int("timeout", 30, "timeout on websocket in seconds")
 	var pidf *string = cliFlag.String("pidfile", "", "path for pidfile")
 	var logf *string = cliFlag.String("logfile", "", "path for log file")
-	var tout *int = cliFlag.Int("timeout", 30, "timeout on websocket in seconds")
 
 	cliFlag.Parse(args)
 
-	setLogfile(*logf, "")
+	wstunCli.Log = makeLogger("WStuncli", *logf, "")
 	writePid(*pidf)
-	setWsTimeout(*tout)
-
-	// validate -tunnel
-	if *tunnel == "" {
-		log15.Crit("Must specify remote tunnel server ws://hostname:port using -tunnel option")
-		os.Exit(1)
-	}
-	if !strings.HasPrefix(*tunnel, "ws://") && !strings.HasPrefix(*tunnel, "wss://") {
-		log15.Crit("Remote tunnel (-tunnel option) must begin with ws:// or wss://")
-		os.Exit(1)
-	}
-	*tunnel = strings.TrimSuffix(*tunnel, "/")
-
-	// validate -server
-	if *server == "" {
-		log15.Crit("Must specify local HTTP server http://hostname:port using -server option")
-		os.Exit(1)
-	}
-	if !strings.HasPrefix(*server, "http://") && !strings.HasPrefix(*server, "https://") {
-		log15.Crit("Local server (-server option) must begin with http:// or https://")
-		os.Exit(1)
-	}
-	*server = strings.TrimSuffix(*server, "/")
+	wstunCli.Timeout = calcWsTimeout(*tout)
 
 	// process -regexp
-	var serverRe *regexp.Regexp = nil
-	if *serverRegexp != "" {
+	if *sre != "" {
 		var err error
-		serverRe, err = regexp.Compile(*serverRegexp)
+		wstunCli.Regexp, err = regexp.Compile(*sre)
 		if err != nil {
-			log15.Crit("Can't parse -servers regexp", "err", err.Error())
+			log15.Crit("Can't parse -regexp", "err", err.Error())
 			os.Exit(1)
 		}
 	}
+	return &wstunCli
+}
+
+func (t *WSTunnelClient) Start() error {
+
+	// validate -tunnel
+	if t.Tunnel == "" {
+		return fmt.Errorf("Must specify tunnel server ws://hostname:port using -tunnel option")
+	}
+	if !strings.HasPrefix(t.Tunnel, "ws://") && !strings.HasPrefix(t.Tunnel, "wss://") {
+		return fmt.Errorf("Remote tunnel (-tunnel option) must begin with ws:// or wss://")
+	}
+	t.Tunnel = strings.TrimSuffix(t.Tunnel, "/")
+
+	// validate -server
+	if t.Server == "" {
+		return fmt.Errorf("Must specify local HTTP server http://hostname:port using -server option")
+	}
+	if !strings.HasPrefix(t.Server, "http://") && !strings.HasPrefix(t.Server, "https://") {
+		return fmt.Errorf("Local server (-server option) must begin with http:// or https://")
+	}
+	t.Server = strings.TrimSuffix(t.Server, "/")
 
 	// validate token and timeout
-	if *token == "" {
-		log15.Crit("Must specify rendez-vous token using -token option")
-		os.Exit(1)
+	if t.Token == "" {
+		return fmt.Errorf("Must specify rendez-vous token using -token option")
+	}
+
+	if t.Insecure {
+		t.Log.Info("Accepting unverified SSL certs from local HTTPS servers")
 	}
 
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
 	// a fresh connection
-	exitChan := make(chan struct{}, 1)
+	t.exitChan = make(chan struct{}, 1)
 
-	//===== Loop =====
+	//===== Goroutine =====
 
 	// Keep opening websocket connections to tunnel requests
 	go func() {
@@ -121,11 +141,13 @@ func wstuncli(args []string) chan struct{} {
 				WriteBufferSize: 100 * 1024,
 			}
 			h := make(http.Header)
-			h.Add("Origin", *token)
-			url := fmt.Sprintf("%s/_tunnel", *tunnel)
+			h.Add("Origin", t.Token)
+			url := fmt.Sprintf("%s/_tunnel", t.Tunnel)
 			timer := time.NewTimer(10 * time.Second)
-			log15.Info("Opening", "url", url)
-			ws, resp, err := d.Dial(url, h)
+			t.Log.Info("WS   Opening", "url", url)
+			var err error
+			var resp *http.Response
+			t.ws, resp, err = d.Dial(url, h)
 			if err != nil {
 				extra := ""
 				if resp != nil {
@@ -137,18 +159,18 @@ func wstuncli(args []string) chan struct{} {
 					}
 					resp.Body.Close()
 				}
-				log15.Warn("Error opening connection",
+				t.Log.Warn("Error opening connection",
 					"err", err.Error(), "info", extra)
 			} else {
 				// Safety setting
-				ws.SetReadLimit(100 * 1024 * 1024)
+				t.ws.SetReadLimit(100 * 1024 * 1024)
 				// Request Loop
-				log15.Info("Handling requests", "server", *server)
-				handleWsRequests(ws, *server, serverRe)
+				t.Log.Info("WS   ready", "server", t.Server)
+				t.handleWsRequests()
 			}
 			// check whether we need to exit
 			select {
-			case <-exitChan:
+			case <-t.exitChan:
 				break
 			}
 
@@ -156,76 +178,80 @@ func wstuncli(args []string) chan struct{} {
 		}
 	}()
 
-	return exitChan
+	return nil
+}
+
+func (t *WSTunnelClient) Stop() {
+	t.exitChan <- struct{}{}
 }
 
 // Main function to handle WS requests: it reads a request from the socket, then forks
 // a goroutine to perform the actual http request and return the result
-func handleWsRequests(ws *websocket.Conn, server string, serverRe *regexp.Regexp) {
-	go pinger(ws)
+func (t *WSTunnelClient) handleWsRequests() {
+	go t.pinger()
 	for {
-		ws.SetReadDeadline(time.Time{}) // separate ping-pong routine does timeout
-		t, r, err := ws.NextReader()
+		t.ws.SetReadDeadline(time.Time{}) // separate ping-pong routine does timeout
+		typ, r, err := t.ws.NextReader()
 		if err != nil {
-			log15.Info("WS: ReadMessage", "err", err.Error())
+			t.Log.Info("WS   ReadMessage", "err", err.Error())
 			break
 		}
-		if t != websocket.BinaryMessage {
-			log15.Info("WS: invalid message type", "type", t)
+		if typ != websocket.BinaryMessage {
+			t.Log.Info("WS   invalid message type", "type", typ)
 			break
 		}
 		// give the sender a minute to produce the request
-		ws.SetReadDeadline(time.Now().Add(time.Minute))
+		t.ws.SetReadDeadline(time.Now().Add(time.Minute))
 		// read request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
 		if err != nil {
-			log15.Info("WS: cannot read request ID", "err", err.Error())
+			t.Log.Info("WS   cannot read request ID", "err", err.Error())
 			break
 		}
 		// read request itself
 		req, err := http.ReadRequest(bufio.NewReader(r))
 		if err != nil {
-			log15.Info("WS: cannot read request body", "err", err.Error())
+			t.Log.Info("WS   cannot read request body", "err", err.Error())
 			break
 		}
 		// Hand off to goroutine to finish off while we read the next request
-		go finishRequest(ws, server, serverRe, id, req)
+		go t.finishRequest(id, req)
 	}
 	// delay a few seconds to allow for writes to drain and then force-close the socket
 	go func() {
 		time.Sleep(5 * time.Second)
-		ws.Close()
+		t.ws.Close()
 	}()
 }
 
 //===== Keep-alive ping-pong =====
 
 // Pinger that keeps connections alive and terminates them if they seem stuck
-func pinger(ws *websocket.Conn) {
+func (t *WSTunnelClient) pinger() {
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
-		ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
+		t.ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
 		time.Sleep(5 * time.Second)
-		ws.Close()
+		t.ws.Close()
 	}
 	// timeout timer
-	timer := time.AfterFunc(wsTimeout, timeout)
+	timer := time.AfterFunc(t.Timeout, timeout)
 	// pong handler resets last pong time
 	ph := func(message string) error {
-		timer.Reset(wsTimeout)
+		timer.Reset(t.Timeout)
 		return nil
 	}
-	ws.SetPongHandler(ph)
+	t.ws.SetPongHandler(ph)
 	// ping loop, ends when socket is closed...
 	for {
-		err := ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsTimeout/3))
+		err := t.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(t.Timeout/3))
 		if err != nil {
 			break
 		}
-		time.Sleep(wsTimeout / 3)
+		time.Sleep(t.Timeout / 3)
 	}
-	ws.Close()
+	t.ws.Close()
 }
 
 //===== HTTP Header Stuff =====
@@ -248,25 +274,24 @@ var hopHeaders = []string{
 
 var wsWriterMutex sync.Mutex // mutex to allow a single goroutine to send a response at a time
 
-func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
-	id int16, req *http.Request) {
+func (t *WSTunnelClient) finishRequest(id int16, req *http.Request) {
 
-	log15.Info("WS", "id", id, "verb", req.Method, "uri", req.RequestURI)
+	log := t.Log.New("id", id, "verb", req.Method, "uri", req.RequestURI)
 
 	// Honor X-Host header
-	host := server
+	host := t.Server
 	xHost := req.Header.Get("X-Host")
 	if xHost != "" {
-		if serverRe == nil {
-			log15.Info("handleWsRequests: got x-host header but no regexp provided")
-			writeResponseMessage(ws, id, concoctResponse(req,
+		if t.Regexp == nil {
+			log.Info("WS   got x-host header but no regexp provided")
+			writeResponseMessage(t, id, concoctResponse(req,
 				"X-Host header disallowed by wstunnel cli (no -regexp option)", 403))
 			return
-		} else if serverRe.FindString(xHost) == xHost {
+		} else if t.Regexp.FindString(xHost) == xHost {
 			host = xHost
 		} else {
-			log15.Info("handleWsRequests: x-host disallowed by regexp", "x-host", xHost)
-			writeResponseMessage(ws, id, concoctResponse(req,
+			log.Info("WS   x-host disallowed by regexp", "x-host", xHost)
+			writeResponseMessage(t, id, concoctResponse(req,
 				"X-Host header does not match regexp in wstunnel cli", 403))
 			return
 		}
@@ -277,85 +302,84 @@ func finishRequest(ws *websocket.Conn, server string, serverRe *regexp.Regexp,
 	var err error
 	req.URL, err = url.Parse(fmt.Sprintf("%s%s", host, req.RequestURI))
 	if err != nil {
-		log15.Warn("handleWsRequests: cannot parse requestURI", "err", err.Error())
-		writeResponseMessage(ws, id, concoctResponse(req,
+		log.Warn("WS   cannot parse requestURI", "err", err.Error())
+		writeResponseMessage(t, id, concoctResponse(req,
 			"Cannot parse request URI", 400))
 		return
 	}
 	req.Host = req.URL.Host // we delete req.Header["Host"] further down
 	req.RequestURI = ""
-	log15.Info("handleWsRequests: issuing request", "url", req.URL.String())
+	log.Info("HTTP issuing request", "url", req.URL.String())
 
 	// Accept self-signed certs
-	//tr := &http.Transport{
-	//        TLSClientConfig: &tls.Config{
-	//                InsecureSkipVerify : true,
-	//        },
-	//}
-	// Issue the request to the HTTP server
-	//client := http.Client{Transport: tr}
+	client := http.Client{} // default client, rejects self-signed certs
+	if t.Insecure {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+		client = http.Client{Transport: tr}
+	}
 
 	// Remove hop-by-hop headers
 	for _, h := range hopHeaders {
 		req.Header.Del(h)
 	}
 	// Issue the request to the HTTP server
-	client := http.Client{}
 	dump, _ := httputil.DumpRequest(req, false)
-	log15.Debug("handleWsRequests: dump",
-		"req", strings.Replace(string(dump), "\r\n", " || ", -1))
+	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
 	resp, err := client.Do(req)
 	if err != nil {
 		//dump2, _ := httputil.DumpResponse(resp, true)
 		//log15.Info("handleWsRequests: request error", "err", err.Error(),
 		//	"req", string(dump), "resp", string(dump2))
-		log15.Info("handleWsRequests: request error", "err", err.Error())
-		writeResponseMessage(ws, id, concoctResponse(req, err.Error(), 502))
+		log.Info("HTTP request error", "err", err.Error())
+		writeResponseMessage(t, id, concoctResponse(req, err.Error(), 502))
 		return
 	}
-	log15.Info("handleWsRequests: response", "status", resp.Status)
+	log.Info("HTTP responded", "status", resp.Status)
 	defer resp.Body.Close()
 
-	writeResponseMessage(ws, id, resp)
-	log15.Info("handleWsRequests: done")
+	writeResponseMessage(t, id, resp)
 }
 
 // Write the response message to the websocket
-func writeResponseMessage(ws *websocket.Conn, id int16, resp *http.Response) {
+func writeResponseMessage(t *WSTunnelClient, id int16, resp *http.Response) {
 	// Get writer's lock
 	wsWriterMutex.Lock()
 	defer wsWriterMutex.Unlock()
 	// Write response into the tunnel
-	ws.SetWriteDeadline(time.Now().Add(time.Minute))
-	w, err := ws.NextWriter(websocket.BinaryMessage)
+	t.ws.SetWriteDeadline(time.Now().Add(time.Minute))
+	w, err := t.ws.NextWriter(websocket.BinaryMessage)
 	// got an error, reply with a "hey, retry" to the request handler
 	if err != nil {
-		log15.Warn("ws.NextWriter", "err", err.Error())
-		ws.Close()
+		t.Log.Warn("WS   NextWriter", "err", err.Error())
+		t.ws.Close()
 		return
 	}
 
 	// write the request Id
 	_, err = fmt.Fprintf(w, "%04x", id)
 	if err != nil {
-		log15.Warn("handleWsRequests: cannot write request Id", "err", err.Error())
-		ws.Close()
+		t.Log.Warn("WS   cannot write request Id", "err", err.Error())
+		t.ws.Close()
 		return
 	}
 
 	// write the response itself
 	err = resp.Write(w)
 	if err != nil {
-		log15.Warn("handleWsRequests: cannot write response", "err", err.Error())
-		ws.Close()
+		t.Log.Warn("WS   cannot write response", "err", err.Error())
+		t.ws.Close()
 		return
 	}
 
 	// done
 	err = w.Close()
 	if err != nil {
-		log15.Warn("handleWsRequests: write-close failed", "err", err.Error())
-		ws.Close()
+		t.Log.Warn("WS   write-close failed", "err", err.Error())
+		t.ws.Close()
 		return
 	}
 }

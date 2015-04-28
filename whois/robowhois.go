@@ -1,6 +1,6 @@
 // Copyright (c) 2014 RightScale, Inc. - see LICENSE
 
-package main
+package whois
 
 import (
 	"encoding/json"

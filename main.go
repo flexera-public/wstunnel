@@ -4,15 +4,15 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/inconshreveable/log15.v2"
-	"net/http"
+	"net"
 	_ "net/http/pprof"
 	"os"
-	"strconv"
-	"time"
-)
+	"strings"
 
-var wsTimeout time.Duration
+	"github.com/rightscale/wstunnel/tunnel"
+	"github.com/rightscale/wstunnel/whois"
+	"gopkg.in/inconshreveable/log15.v2"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -21,9 +21,12 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "cli":
-		wstuncli(os.Args[2:])
+		tunnel.NewWSTunnelClient(os.Args[2:]).Start()
 	case "srv":
-		wstunsrv(os.Args[2:], nil)
+		tunnel.NewWSTunnelServer(os.Args[2:]).Start(nil)
+	case "whois":
+		lookupWhois(os.Args[2:])
+		os.Exit(0)
 	case "version", "-version", "--version":
 		log15.Crit(VV)
 		os.Exit(1)
@@ -34,76 +37,13 @@ func main() {
 	<-make(chan struct{}, 0)
 }
 
-func writePid(file string) {
-	if file != "" {
-		_ = os.Remove(file)
-		pid := os.Getpid()
-		f, err := os.Create(file)
-		if err != nil {
-			log15.Crit("Can't create pidfile", "file", file, "err", err.Error())
-			os.Exit(1)
-		}
-		_, err = f.WriteString(strconv.Itoa(pid) + "\n")
-		if err != nil {
-			log15.Crit("Can't write to pidfile", "file", file, "err", err.Error())
-			os.Exit(1)
-		}
-		f.Close()
+func lookupWhois(args []string) {
+	if len(args) != 2 {
+		log15.Crit("Usage: %s whois <whois-token> <ip-address>", os.Args[0])
+		os.Exit(1)
 	}
-}
-
-// Set logging to use the file or syslog, one of the them must be "" else an error ensues
-func setLogfile(file, facility string) {
-	if file != "" {
-		if facility != "" {
-			log15.Crit("Can't log to syslog and logfile simultaneously")
-			os.Exit(1)
-		}
-		log15.Info("Switching logging", "file", file)
-		h, err := log15.FileHandler(file, log15.TerminalFormat())
-		if err != nil {
-			log15.Crit("Can't create log file", "file", file, "err", err.Error())
-			os.Exit(1)
-		}
-		log15.Root().SetHandler(h)
-		log15.Info("Started logging here")
-	} else if facility != "" {
-		log15.Info("Switching logging to syslog", "facility", facility)
-		h, err := log15.SyslogHandler(facility, log15.TerminalFormat())
-		if err != nil {
-			log15.Crit("Can't connect to syslog", "err", err.Error())
-			os.Exit(1)
-		}
-		log15.Root().SetHandler(h)
-		log15.Info("Started logging here")
-	} else {
-		log15.Info("WStunnel starting")
-	}
-}
-
-/*
-var log15Logger = func() log.Logger {
-	writer :=
-	return log.New(writer, "", 0)
-}()
-*/
-
-func setWsTimeout(tout int) {
-	if tout < 3 {
-		wsTimeout = 3 * time.Second
-	} else if tout > 600 {
-		wsTimeout = 600 * time.Second
-	} else {
-		wsTimeout = time.Duration(tout) * time.Second
-	}
-	log15.Info("Websocket keep-alive timeout", "timeout", wsTimeout)
-}
-
-// copy http headers over
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
+	what := args[1]
+	names, _ := net.LookupAddr(what)
+	log15.Info("DNS   ", "addr", what, "dns", strings.Join(names, ","))
+	log15.Info("WHOIS ", "addr", what, "dns", whois.Whois(what, args[0]))
 }

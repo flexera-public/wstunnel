@@ -17,41 +17,45 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
+	"github.com/rightscale/wstunnel/tunnel"
 )
 
 var _ = Describe("Testing xhost requests", func() {
 
 	var server *ghttp.Server
-	var cliStop, srvStop chan struct{}
+	var wstuncli *tunnel.WSTunnelClient
+	var wstunsrv *tunnel.WSTunnelServer
 	var wstunUrl string
 	var wstunToken string
-	var cliStart func(server, regexp string) chan struct{}
+	var cliStart func(server, regexp string) *tunnel.WSTunnelClient
 
 	BeforeEach(func() {
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 		server = ghttp.NewServer()
 		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
-		serverBasics(server)
 
 		l, _ := net.Listen("tcp", "127.0.0.1:0")
-		srvStop = wstunsrv([]string{}, l)
+		wstunsrv = tunnel.NewWSTunnelServer([]string{})
+		wstunsrv.Start(l)
 		fmt.Fprintf(os.Stderr, "Server started\n")
 		wstunUrl = "http://" + l.Addr().String()
-		cliStart = func(server, regexp string) chan struct{} {
-			return wstuncli([]string{
+		cliStart = func(server, regexp string) *tunnel.WSTunnelClient {
+			wstuncli = tunnel.NewWSTunnelClient([]string{
 				"-token", wstunToken, "-tunnel", "ws://" + l.Addr().String(),
 				"-server", server, "-regexp", regexp,
 			})
+			wstuncli.Start()
+			return wstuncli
 		}
 	})
 	AfterEach(func() {
-		cliStop <- struct{}{}
-		srvStop <- struct{}{}
+		wstuncli.Stop()
+		wstunsrv.Stop()
 		server.Close()
 	})
 
 	It("Respects x-host header", func() {
-		cliStop = cliStart("http://localhost:123", `http://127\.0\.0\.[0-9]:[0-9]+`)
+		wstuncli = cliStart("http://localhost:123", `http://127\.0\.0\.[0-9]:[0-9]+`)
 		server.AppendHandlers(
 			ghttp.CombineHandlers(
 				ghttp.VerifyRequest("GET", "/hello"),
@@ -76,7 +80,7 @@ var _ = Describe("Testing xhost requests", func() {
 	})
 
 	It("Rejects partial host regexp matches", func() {
-		cliStop = cliStart("http://localhost:123", `http://127\.0\.0\.[0-9]:[0-9]+`)
+		wstuncli = cliStart("http://localhost:123", `http://127\.0\.0\.[0-9]:[0-9]+`)
 		server.AppendHandlers(
 			ghttp.CombineHandlers(
 				ghttp.RespondWith(200, `HOSTED`,
@@ -96,7 +100,7 @@ var _ = Describe("Testing xhost requests", func() {
 	})
 
 	It("Handles the default server", func() {
-		cliStop = cliStart(server.URL(), `xxx`)
+		wstuncli = cliStart(server.URL(), `xxx`)
 		server.AppendHandlers(
 			ghttp.CombineHandlers(
 				ghttp.RespondWith(200, `HOSTED`,

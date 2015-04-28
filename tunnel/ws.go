@@ -1,6 +1,6 @@
 // Copyright (c) 2014 RightScale, Inc. - see LICENSE
 
-package main
+package tunnel
 
 import (
 	"bytes"
@@ -18,8 +18,8 @@ import (
 
 var _ fmt.Formatter
 
-func httpError(w http.ResponseWriter, token, err string, code int) {
-	log15.Info("WS:   ERR", "token", token, "status", code, "err", err)
+func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code int) {
+	log.Info("ERR", "token", token, "status", code, "err", err)
 	http.Error(w, err, code)
 }
 
@@ -30,55 +30,55 @@ const (
 )
 
 // Handler for websockets tunnel establishment requests
-func wsHandler(w http.ResponseWriter, r *http.Request) {
+func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	addr := r.Header.Get("X-Forwarded-For")
 	if addr == "" {
 		addr = r.RemoteAddr
 	}
 	// Verify that an origin header with a token is provided
-	token := r.Header.Get("Origin")
-	if token == "" {
-		httpError(w, addr, "Origin header with rendez-vous token required", 400)
+	tok := r.Header.Get("Origin")
+	if tok == "" {
+		httpError(t.Log, w, addr, "Origin header with rendez-vous token required", 400)
 		return
 	}
-	if len(token) < MIN_TOKEN_LEN {
-		httpError(w, addr,
+	if len(tok) < MIN_TOKEN_LEN {
+		httpError(t.Log, w, addr,
 			fmt.Sprintf("Rendez-vous token (%s) is too short (must be %d chars)",
-				token, MIN_TOKEN_LEN), 400)
+				tok, MIN_TOKEN_LEN), 400)
 		return
 	}
-	logTok := CutToken(Token(token))
-	log15.Info("WS connection", "token", logTok, "addr", addr)
+	logTok := cutToken(token(tok))
+	t.Log.Info("new connection", "token", logTok, "addr", addr)
 	// Upgrade to web sockets
 	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
 	if _, ok := err.(websocket.HandshakeError); ok {
-		httpError(w, logTok, "Not a websocket handshake", 400)
+		httpError(t.Log, w, logTok, "Not a websocket handshake", 400)
 		return
 	} else if err != nil {
-		httpError(w, logTok, err.Error(), 400)
+		httpError(t.Log, w, logTok, err.Error(), 400)
 		return
 	}
 	// Get/Create RemoteServer
-	rs := GetRemoteServer(Token(token))
+	rs := t.getRemoteServer(token(tok))
 	rs.remoteAddr = addr
 	rs.lastActivity = time.Now()
 	// do reverse DNS lookup asynchronously
 	go func() {
-		rs.remoteName, rs.remoteWhois = ipAddrLookup(rs.remoteAddr)
+		rs.remoteName, rs.remoteWhois = ipAddrLookup(t.Log, rs.remoteAddr)
 	}()
 	// Set safety limits
 	ws.SetReadLimit(100 * 1024 * 1024)
 	// Start timout handling
-	wsSetPingHandler(ws, rs)
+	wsSetPingHandler(t, ws, rs)
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(rs, ws, ch)
+	go wsReader(rs, ws, t.WSTimeout, ch)
 	// Send requests
 	wsWriter(rs, ws, ch)
 }
 
-func wsSetPingHandler(ws *websocket.Conn, rs *RemoteServer) {
+func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
 		ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
@@ -86,11 +86,11 @@ func wsSetPingHandler(ws *websocket.Conn, rs *RemoteServer) {
 		ws.Close()
 	}
 	// timeout timer
-	timer := time.AfterFunc(wsTimeout, timeout)
+	timer := time.AfterFunc(t.WSTimeout, timeout)
 	// ping handler resets last ping time
 	ph := func(message string) error {
-		timer.Reset(wsTimeout)
-		ws.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(wsTimeout/3))
+		timer.Reset(t.WSTimeout)
+		ws.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(t.WSTimeout/3))
 		// update lastActivity
 		rs.lastActivity = time.Now()
 		return nil
@@ -99,8 +99,8 @@ func wsSetPingHandler(ws *websocket.Conn, rs *RemoteServer) {
 }
 
 // Pick requests off the RemoteServer queue and send them into the tunnel
-func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
-	var req *RemoteRequest
+func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
+	var req *remoteRequest
 	var err error
 	for {
 		// fetch a request
@@ -116,10 +116,10 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		//log.Printf("WS->%s#%d start %s", req.token, req.id, req.info)
 		// See whether the request has already expired
 		if req.deadline.Before(time.Now()) {
-			req.replyChan <- ResponseBuffer{
+			req.replyChan <- responseBuffer{
 				err: errors.New("Timeout before forwarding the request"),
 			}
-			req.log.Info("WS  SND timeout before sending", "ago",
+			req.log.Info("WS   SND timeout before sending", "ago",
 				time.Now().Sub(req.deadline).Seconds())
 			continue
 		}
@@ -149,8 +149,8 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		req.log.Info("WS   SND", "info", req.info)
 	}
 	// tell the sender to retry the request
-	req.replyChan <- ResponseBuffer{err: RetryError}
-	req.log.Info("WS causes retry")
+	req.replyChan <- responseBuffer{err: RetryError}
+	req.log.Info("WS error causes retry")
 	// close up shop
 	ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))
 	time.Sleep(2 * time.Second)
@@ -158,9 +158,9 @@ func wsWriter(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
+func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int) {
 	var err error
-	log_token := CutToken(rs.token)
+	log_token := cutToken(rs.token)
 	// continue reading until we get an error
 	for {
 		ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
@@ -194,7 +194,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 		rs.requestSetMutex.Unlock()
 		// let's see...
 		if req != nil {
-			rb := ResponseBuffer{response: bytes.NewBuffer(buf)}
+			rb := responseBuffer{response: bytes.NewBuffer(buf)}
 			// try to enqueue response
 			select {
 			case req.replyChan <- rb:
@@ -208,7 +208,7 @@ func wsReader(rs *RemoteServer, ws *websocket.Conn, ch chan int) {
 	}
 	// print error message
 	if err != nil {
-		log15.Info("WS   closing", "token", log_token, "err", err.Error())
+		rs.log.Info("WS   closing", "token", log_token, "err", err.Error())
 	}
 	// close up shop
 	ch <- 0 // notify sender
