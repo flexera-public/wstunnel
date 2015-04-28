@@ -1,6 +1,6 @@
 // Copyright (c) 2015 RightScale, Inc. - see LICENSE
 
-package main
+package tunnel
 
 // Omega: Alt+937
 
@@ -19,14 +19,13 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
-	"github.com/rightscale/wstunnel/tunnel"
 )
 
 var _ = Describe("Testing sequential requests", func() {
 
 	var server *ghttp.Server
-	var wstunsrv *tunnel.WSTunnelServer
-	var wstuncli *tunnel.WSTunnelClient
+	var wstunsrv *WSTunnelServer
+	var wstuncli *WSTunnelClient
 	var wstunUrl string
 	var wstunToken string
 
@@ -36,10 +35,10 @@ var _ = Describe("Testing sequential requests", func() {
 		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
 
 		l, _ := net.Listen("tcp", "127.0.0.1:0")
-		wstunsrv = tunnel.NewWSTunnelServer([]string{})
+		wstunsrv = NewWSTunnelServer([]string{})
 		wstunsrv.Start(l)
 		fmt.Fprintf(os.Stderr, "Server started\n")
-		wstuncli = tunnel.NewWSTunnelClient([]string{
+		wstuncli = NewWSTunnelClient([]string{
 			"-token", wstunToken,
 			"-tunnel", "ws://" + l.Addr().String(),
 			"-server", server.URL(),
