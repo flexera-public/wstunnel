@@ -136,6 +136,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 }
 
 func (t *WSTunnelServer) Start(listener net.Listener) {
+	t.Log.Info(VV)
 	if t.serverRegistry != nil {
 		return // already started...
 	}
@@ -491,6 +492,8 @@ func (t *WSTunnelServer) idleTunnelReaper() {
 		for _, rs := range t.serverRegistry {
 			if time.Since(rs.lastActivity) > 60*time.Minute {
 				go func() {
+					rs.log.Warn("Tunnel not seen for too long, deleting",
+						"ago", time.Since(rs.lastActivity))
 					// unlink so new tunnels/tokens use a new RemoteServer object
 					delete(t.serverRegistry, rs.token)
 					rs.AbortRequests()

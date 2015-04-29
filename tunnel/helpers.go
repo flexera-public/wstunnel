@@ -9,6 +9,10 @@ import (
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
+var VV string
+
+func SetVV(vv string) { VV = vv }
+
 func writePid(file string) {
 	if file != "" {
 		_ = os.Remove(file)

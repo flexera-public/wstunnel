@@ -99,6 +99,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 }
 
 func (t *WSTunnelClient) Start() error {
+	t.Log.Info(VV)
 
 	// validate -tunnel
 	if t.Tunnel == "" {
@@ -159,7 +160,7 @@ func (t *WSTunnelClient) Start() error {
 					}
 					resp.Body.Close()
 				}
-				t.Log.Warn("Error opening connection",
+				t.Log.Error("Error opening connection",
 					"err", err.Error(), "info", extra)
 			} else {
 				// Safety setting
@@ -212,7 +213,7 @@ func (t *WSTunnelClient) handleWsRequests() {
 		// read request itself
 		req, err := http.ReadRequest(bufio.NewReader(r))
 		if err != nil {
-			t.Log.Info("WS   cannot read request body", "err", err.Error())
+			t.Log.Info("WS   cannot read request body", "id", id, "err", err.Error())
 			break
 		}
 		// Hand off to goroutine to finish off while we read the next request
@@ -229,9 +230,11 @@ func (t *WSTunnelClient) handleWsRequests() {
 
 // Pinger that keeps connections alive and terminates them if they seem stuck
 func (t *WSTunnelClient) pinger() {
+	t.Log.Info("pinger starting")
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
 		t.ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
+		t.Log.Info("ping timeout, closing WS")
 		time.Sleep(5 * time.Second)
 		t.ws.Close()
 	}
@@ -251,6 +254,7 @@ func (t *WSTunnelClient) pinger() {
 		}
 		time.Sleep(t.Timeout / 3)
 	}
+	t.Log.Info("pinger ending (WS errored or closed)")
 	t.ws.Close()
 }
 

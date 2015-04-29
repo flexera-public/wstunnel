@@ -14,6 +14,8 @@ import (
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
+func init() { tunnel.SetVV(VV) } // propagate version
+
 func main() {
 	if len(os.Args) < 2 {
 		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv] [-options...]", os.Args[0]))
