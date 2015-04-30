@@ -83,6 +83,7 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	timeout := func() {
 		ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
 		time.Sleep(5 * time.Second)
+		rs.log.Info("WS closing due to ping timeout")
 		ws.Close()
 	}
 	// timeout timer

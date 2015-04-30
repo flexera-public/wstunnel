@@ -325,7 +325,6 @@ Tries:
 			http.Error(w, err.Error(), 504)
 			break Tries
 		}
-		req.log = req.log.New("id", req.id)
 		try := ""
 		if tries > 1 {
 			try = fmt.Sprintf("(attempt #%d)", tries)
@@ -409,7 +408,7 @@ l:
 		case req := <-rs.requestQueue:
 			select {
 			case req.replyChan <- responseBuffer{err: RetryError}: // non-blocking send
-				req.log.Info("WS tunnel inactive timeout causes retry")
+				req.log.Info("WS tunnel not-seen timeout causes retry")
 			default:
 			}
 		default:
@@ -426,6 +425,7 @@ func (rs *remoteServer) AddRequest(req *remoteRequest) error {
 	if req.id < 0 {
 		rs.lastId = (rs.lastId + 1) % 32000
 		req.id = rs.lastId
+		req.log = req.log.New("id", req.id)
 	}
 	rs.requestSet[req.id] = req
 	select {
@@ -491,13 +491,11 @@ func (t *WSTunnelServer) idleTunnelReaper() {
 		t.serverRegistryMutex.Lock()
 		for _, rs := range t.serverRegistry {
 			if time.Since(rs.lastActivity) > 60*time.Minute {
-				go func() {
-					rs.log.Warn("Tunnel not seen for too long, deleting",
-						"ago", time.Since(rs.lastActivity))
-					// unlink so new tunnels/tokens use a new RemoteServer object
-					delete(t.serverRegistry, rs.token)
-					rs.AbortRequests()
-				}()
+				rs.log.Warn("Tunnel not seen for too long, deleting",
+					"ago", time.Since(rs.lastActivity))
+				// unlink so new tunnels/tokens use a new RemoteServer object
+				delete(t.serverRegistry, rs.token)
+				go rs.AbortRequests()
 			}
 		}
 		t.serverRegistryMutex.Unlock()
