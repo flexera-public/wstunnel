@@ -29,6 +29,7 @@ import (
 	"crypto/tls"
 	"os"
 	"regexp"
+	"runtime"
 	//"crypto/tls"
 	"flag"
 	"fmt"
@@ -49,15 +50,16 @@ import (
 var _ fmt.Formatter
 
 type WSTunnelClient struct {
-	Token    string          // Rendez-vous token
-	Tunnel   string          // websocket server to connect to (ws[s]://hostname:port)
-	Server   string          // local HTTP(S) server to send received requests to (default server)
-	Regexp   *regexp.Regexp  // regexp for allowed local HTTP(S) servers
-	Insecure bool            // accept self-signed SSL certs from local HTTPS servers
-	Timeout  time.Duration   // timeout on websocket
-	Log      log15.Logger    // logger with "pkg=WStuncli"
-	exitChan chan struct{}   // channel to tell the tunnel goroutines to end
-	ws       *websocket.Conn // websocket connection
+	Token          string          // Rendez-vous token
+	Tunnel         string          // websocket server to connect to (ws[s]://hostname:port)
+	Server         string          // local HTTP(S) server to send received requests to (default server)
+	InternalServer http.Handler    // internal Server to dispatch HTTP requests to
+	Regexp         *regexp.Regexp  // regexp for allowed local HTTP(S) servers
+	Insecure       bool            // accept self-signed SSL certs from local HTTPS servers
+	Timeout        time.Duration   // timeout on websocket
+	Log            log15.Logger    // logger with "pkg=WStuncli"
+	exitChan       chan struct{}   // channel to tell the tunnel goroutines to end
+	ws             *websocket.Conn // websocket connection
 }
 
 //===== Main =====
@@ -111,13 +113,17 @@ func (t *WSTunnelClient) Start() error {
 	t.Tunnel = strings.TrimSuffix(t.Tunnel, "/")
 
 	// validate -server
-	if t.Server == "" {
-		return fmt.Errorf("Must specify local HTTP server http://hostname:port using -server option")
+	if t.InternalServer == nil {
+		if t.Server == "" {
+			return fmt.Errorf("Must specify local HTTP server http://hostname:port using -server option")
+		}
+		if !strings.HasPrefix(t.Server, "http://") && !strings.HasPrefix(t.Server, "https://") {
+			return fmt.Errorf("Local server (-server option) must begin with http:// or https://")
+		}
+		t.Server = strings.TrimSuffix(t.Server, "/")
+	} else {
+		t.Server = ""
 	}
-	if !strings.HasPrefix(t.Server, "http://") && !strings.HasPrefix(t.Server, "https://") {
-		return fmt.Errorf("Local server (-server option) must begin with http:// or https://")
-	}
-	t.Server = strings.TrimSuffix(t.Server, "/")
 
 	// validate token and timeout
 	if t.Token == "" {
@@ -126,6 +132,14 @@ func (t *WSTunnelClient) Start() error {
 
 	if t.Insecure {
 		t.Log.Info("Accepting unverified SSL certs from local HTTPS servers")
+	}
+
+	if t.InternalServer != nil {
+		t.Log.Info("Dispatching to internal server")
+	} else if t.Server != "" {
+		t.Log.Info("Dispatching to external server(s)", "server", t.Server, "regexp", t.Regexp)
+	} else {
+		return fmt.Errorf("Must specify internal server or server")
 	}
 
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
@@ -217,7 +231,11 @@ func (t *WSTunnelClient) handleWsRequests() {
 			break
 		}
 		// Hand off to goroutine to finish off while we read the next request
-		go t.finishRequest(id, req)
+		if t.InternalServer != nil {
+			go t.finishInternalRequest(id, req)
+		} else {
+			go t.finishRequest(id, req)
+		}
 	}
 	// delay a few seconds to allow for writes to drain and then force-close the socket
 	go func() {
@@ -274,9 +292,108 @@ var hopHeaders = []string{
 	"Host",
 }
 
+//===== HTTP response writer, used for internal request handlers
+
+type responseWriter struct {
+	resp *http.Response
+	buf  *bytes.Buffer
+}
+
+func newResponseWriter(req *http.Request) *responseWriter {
+	buf := bytes.Buffer{}
+	resp := http.Response{
+		Header:        make(http.Header),
+		Body:          ioutil.NopCloser(&buf),
+		StatusCode:    -1,
+		ContentLength: -1,
+		Proto:         req.Proto,
+		ProtoMajor:    req.ProtoMajor,
+		ProtoMinor:    req.ProtoMinor,
+	}
+	return &responseWriter{
+		resp: &resp,
+		buf:  &buf,
+	}
+
+}
+
+func (rw *responseWriter) Write(buf []byte) (int, error) {
+	if rw.resp.StatusCode == -1 {
+		rw.WriteHeader(200)
+	}
+	return rw.buf.Write(buf)
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.resp.StatusCode = code
+	rw.resp.Status = http.StatusText(code)
+}
+
+func (rw *responseWriter) Header() http.Header { return rw.resp.Header }
+
+func (rw *responseWriter) finishResponse() error {
+	if rw.resp.StatusCode == -1 {
+		return fmt.Errorf("HTTP internal handler did not call Write or WriteHeader")
+	}
+	rw.resp.ContentLength = int64(rw.buf.Len())
+
+	return nil
+}
+
 //===== HTTP driver and response sender =====
 
 var wsWriterMutex sync.Mutex // mutex to allow a single goroutine to send a response at a time
+
+// Issue a request to an internal handler. This duplicates some logic found in
+// net.http.serve http://golang.org/src/net/http/server.go?#L1124 and
+// net.http.readRequest http://golang.org/src/net/http/server.go?#L
+func (t *WSTunnelClient) finishInternalRequest(id int16, req *http.Request) {
+	log := t.Log.New("id", id, "verb", req.Method, "uri", req.RequestURI)
+	log.Info("HTTP issuing internal request")
+
+	// Remove hop-by-hop headers
+	for _, h := range hopHeaders {
+		req.Header.Del(h)
+	}
+
+	// Add fake protocol version
+	req.Proto = "HTTP/1.0"
+	req.ProtoMajor = 1
+	req.ProtoMinor = 0
+
+	// Dump the request into a buffer in case we want to log it
+	dump, _ := httputil.DumpRequest(req, false)
+	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
+
+	// Make sure we don't die if a panic occurs in the handler
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			log.Error("HTTP panic in handler", "err", err, "stack", string(buf))
+		}
+	}()
+
+	// Concoct Response
+	rw := newResponseWriter(req)
+
+	// Issue the request to the HTTP server
+	t.InternalServer.ServeHTTP(rw, req)
+
+	err := rw.finishResponse()
+	if err != nil {
+		//dump2, _ := httputil.DumpResponse(resp, true)
+		//log15.Info("handleWsRequests: request error", "err", err.Error(),
+		//	"req", string(dump), "resp", string(dump2))
+		log.Info("HTTP request error", "err", err.Error())
+		writeResponseMessage(t, id, concoctResponse(req, err.Error(), 502))
+		return
+	}
+
+	log.Info("HTTP responded", "status", rw.resp.Status)
+	writeResponseMessage(t, id, rw.resp)
+}
 
 func (t *WSTunnelClient) finishRequest(id int16, req *http.Request) {
 
