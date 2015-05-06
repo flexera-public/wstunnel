@@ -72,8 +72,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		"rendez-vous token identifying this server")
 	cliFlag.StringVar(&wstunCli.Tunnel, "tunnel", "",
 		"websocket server ws[s]://hostname:port to connect to")
-	cliFlag.StringVar(&wstunCli.Server, "server", "http://localhost",
-		"local HTTP(S) server to send received requests to")
+	cliFlag.StringVar(&wstunCli.Server, "server", "",
+		"http server http[s]://hostname:port to send received requests to")
 	cliFlag.BoolVar(&wstunCli.Insecure, "insecure", false,
 		"accept self-signed SSL certs from local HTTPS servers")
 	var sre *string = cliFlag.String("regexp", "",
@@ -136,10 +136,10 @@ func (t *WSTunnelClient) Start() error {
 
 	if t.InternalServer != nil {
 		t.Log.Info("Dispatching to internal server")
-	} else if t.Server != "" {
+	} else if t.Server != "" || t.Regexp != nil {
 		t.Log.Info("Dispatching to external server(s)", "server", t.Server, "regexp", t.Regexp)
 	} else {
-		return fmt.Errorf("Must specify internal server or server")
+		return fmt.Errorf("Must specify internal server or server or regexp")
 	}
 
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
@@ -416,6 +416,11 @@ func (t *WSTunnelClient) finishRequest(id int16, req *http.Request) {
 				"X-Host header does not match regexp in wstunnel cli", 403))
 			return
 		}
+	} else if host == "" {
+		log.Info("WS   no x-host header and -server not specified")
+		writeResponseMessage(t, id, concoctResponse(req,
+			"X-Host header required by wstunnel cli (no -server option)", 403))
+		return
 	}
 	req.Header.Del("X-Host")
 
