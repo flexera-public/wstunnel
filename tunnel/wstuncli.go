@@ -113,16 +113,13 @@ func (t *WSTunnelClient) Start() error {
 	t.Tunnel = strings.TrimSuffix(t.Tunnel, "/")
 
 	// validate -server
-	if t.InternalServer == nil {
-		if t.Server == "" {
-			return fmt.Errorf("Must specify local HTTP server http://hostname:port using -server option")
-		}
+	if t.InternalServer != nil {
+		t.Server = ""
+	} else if t.Server != "" {
 		if !strings.HasPrefix(t.Server, "http://") && !strings.HasPrefix(t.Server, "https://") {
 			return fmt.Errorf("Local server (-server option) must begin with http:// or https://")
 		}
 		t.Server = strings.TrimSuffix(t.Server, "/")
-	} else {
-		t.Server = ""
 	}
 
 	// validate token and timeout

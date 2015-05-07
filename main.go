@@ -23,7 +23,11 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "cli":
-		tunnel.NewWSTunnelClient(os.Args[2:]).Start()
+		err := tunnel.NewWSTunnelClient(os.Args[2:]).Start()
+		if err != nil {
+			log15.Crit(err.Error())
+			os.Exit(1)
+		}
 	case "srv":
 		tunnel.NewWSTunnelServer(os.Args[2:]).Start(nil)
 	case "whois":
