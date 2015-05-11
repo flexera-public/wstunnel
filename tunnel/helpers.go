@@ -49,7 +49,7 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 		log.Info("Started logging here")
 	} else if facility != "" {
 		log.Info("Switching logging to syslog", "facility", facility)
-		h, err := log15.SyslogHandler(facility, log15.TerminalFormat())
+		h, err := log15.SyslogHandler(facility, log15.LogfmtFormat())
 		if err != nil {
 			log.Crit("Can't connect to syslog", "err", err.Error())
 			os.Exit(1)
