@@ -408,9 +408,11 @@ func (t *WSTunnelClient) finishRequest(id int16, req *http.Request) {
 		} else if t.Regexp.FindString(xHost) == xHost {
 			host = xHost
 		} else {
-			log.Info("WS   x-host disallowed by regexp", "x-host", xHost)
+			log.Info("WS   x-host disallowed by regexp", "x-host", xHost, "regexp",
+				t.Regexp.String(), "match", t.Regexp.FindString(xHost))
 			writeResponseMessage(t, id, concoctResponse(req,
-				"X-Host header does not match regexp in wstunnel cli", 403))
+				"X-Host header '"+xHost+"' does not match regexp in wstunnel cli",
+				403))
 			return
 		}
 	} else if host == "" {

@@ -94,7 +94,7 @@ var _ = Describe("Testing xhost requests", func() {
 		Ω(err).ShouldNot(HaveOccurred())
 		respBody, err := ioutil.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
-		Ω(string(respBody)).Should(ContainSubstring("X-Host header does not match regexp"))
+		Ω(string(respBody)).Should(ContainSubstring("does not match regexp"))
 		Ω(resp.StatusCode).Should(Equal(403))
 	})
 
