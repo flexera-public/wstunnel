@@ -126,7 +126,7 @@ travis-test: lint
 
 # running ginkgo twice, sadly, the problem is that -cover modifies the source code with the effect
 # that if there are errors the output of gingko refers to incorrect line numbers
-# tip: if you don't like colors use gingkgo -r -noColor
+# tip: if you don't like colors use ginkgo -r -noColor
 test: lint
 	ginkgo -r
 	ginkgo -r -cover
