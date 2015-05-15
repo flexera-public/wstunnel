@@ -46,6 +46,7 @@ ifeq ($(OS),Windows_NT)
 	SHELL:=/bin/dash
 	GOPATH:=$(shell cygpath --windows $(PWD))/Godeps/_workspace;$(GOPATH)
 else
+	SHELL:=/bin/bash
 	GOPATH:=$(PWD)/Godeps/_workspace:$(GOPATH)
 endif
 # because of the Godep path we build ginkgo into the godep workspace
