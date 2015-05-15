@@ -1,10 +1,12 @@
 WStunnel - Web Sockets Tunnel
 =============================
 
-- Master: [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
+- Master:
+[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
 [![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_master.svg)](https://gocover.io/github.com/rightscale/wstunnel)
-- 1.0.1: [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.1)](https://travis-ci.org/rightscale/wstunnel)
-[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.1.svg)](https://gocover.io/github.com/rightscale/wstunnel)
+- 1.0.2:
+[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.2)](https://travis-ci.org/rightscale/wstunnel)
+[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.2.svg)](https://gocover.io/github.com/rightscale/wstunnel)
 
 WStunnel creates an HTTPS tunnel that can connect servers sitting
 behind an HTTP proxy and firewall to clients on the internet. It differs from many other projects
@@ -78,8 +80,9 @@ try it out):
 
 ### Download
 
-Release branches are named '1.N.M'.  Download the latest Linux binary from
-https://binaries.rightscale.com/rsbin/wstunnel/1.0.0/wstunnel-linux-amd64.tgz
+Release branches are named '1.N.M' and a '1.N' package is created with each revision
+as a form of 'latest'.  Download the latest Linux binary from
+https://binaries.rightscale.com/rsbin/wstunnel/1.0/wstunnel-linux-amd64.tgz
 and extract the binary. To compile for OS-X or Linux ARM clone the github repo and run
 `make depend; make` (this is not tested).
 
