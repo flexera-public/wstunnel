@@ -198,7 +198,7 @@ func calcWsTimeout(tout int) time.Duration {
 	} else {
 		wsTimeout = time.Duration(tout) * time.Second
 	}
-	log15.Info("Websocket keep-alive timeout", "timeout", wsTimeout)
+	log15.Info("Setting WS keep-alive", "timeout", wsTimeout)
 	return wsTimeout
 }
 

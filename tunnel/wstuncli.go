@@ -196,6 +196,7 @@ func (t *WSTunnelClient) Start() error {
 			select {
 			case <-t.exitChan:
 				break
+			default: // non-blocking receive
 			}
 
 			<-timer.C // ensure we don't open connections too rapidly

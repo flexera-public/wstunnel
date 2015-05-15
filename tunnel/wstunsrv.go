@@ -313,60 +313,74 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 	}
 
 	// repeatedly try to get a response
-	var rs *remoteServer
-Tries:
 	for tries := 1; tries <= 3; tries += 1 {
-		// get a hold of the remote server
-		rs = t.getRemoteServer(token(tok), false)
-		if rs == nil {
-			req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "404",
-				"err", "Tunnel not found")
-			http.Error(w, "Tunnel not found (or not seen in a long time)", 404)
+		retry := getResponse(t, req, w, r, tok, tries)
+		if !retry {
 			return
 		}
+	}
+}
 
-		// enqueue request
-		err := rs.AddRequest(req)
-		if err != nil {
-			req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "504",
-				"err", err.Error())
-			http.Error(w, err.Error(), 504)
-			break Tries
-		}
-		try := ""
-		if tries > 1 {
-			try = fmt.Sprintf("(attempt #%d)", tries)
-		}
-		req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
-			"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
-		// wait for response
-		select {
-		case resp := <-req.replyChan:
-			// if there's no error just respond
-			if resp.err == nil {
-				code := writeResponse(w, resp.response)
-				req.log.Info("HTTP RET", "status", code)
-				break Tries
-			}
-			// if it's a non-retryable error then write the error
-			if resp.err != RetryError {
-				req.log.Info("HTTP RET",
-					"status", "504", "err", resp.err.Error())
-				http.Error(w, resp.err.Error(), 504)
-				break Tries
-			}
-			// else we're gonna retry
-			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
-		case <-time.After(time.Duration(t.HttpTimeout) * time.Second):
-			// it timed out...
-			req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
-			http.Error(w, "Tunnel timeout", 504)
-			break Tries
-		}
+// getResponse adds the request to a remote server and then waits to get a response back, and it
+// writes it. It returns true if the whole thing needs to be retried and false if we're done
+// sucessfully or not)
+func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r *http.Request,
+	tok token, tries int) (retry bool) {
+	retry = false
+
+	// get a hold of the remote server
+	rs := t.getRemoteServer(token(tok), false)
+	if rs == nil {
+		req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "404",
+			"err", "Tunnel not found")
+		http.Error(w, "Tunnel not found (or not seen in a long time)", 404)
+		return
 	}
 
-	// Retire the request, since we've responded...
-	rs.RetireRequest(req)
+	// Ensure we retire the request when we pop out of this function
+	defer func() {
+		rs.RetireRequest(req)
+	}()
+
+	// enqueue request
+	err := rs.AddRequest(req)
+	if err != nil {
+		req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "504",
+			"err", err.Error())
+		http.Error(w, err.Error(), 504)
+		return
+	}
+	try := ""
+	if tries > 1 {
+		try = fmt.Sprintf("(attempt #%d)", tries)
+	}
+	req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
+		"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
+	// wait for response
+	select {
+	case resp := <-req.replyChan:
+		// if there's no error just respond
+		if resp.err == nil {
+			code := writeResponse(w, resp.response)
+			req.log.Info("HTTP RET", "status", code)
+			return
+		}
+		// if it's a non-retryable error then write the error
+		if resp.err != RetryError {
+			req.log.Info("HTTP RET",
+				"status", "504", "err", resp.err.Error())
+			http.Error(w, resp.err.Error(), 504)
+		} else {
+			// else we're gonna retry
+			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
+			retry = true
+		}
+	case <-time.After(time.Duration(t.HttpTimeout) * time.Second):
+		// it timed out...
+		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
+		http.Error(w, "Tunnel timeout", 504)
+	}
+	return
 }
 
 // tunnelHandler handles tunnel establishment requests
