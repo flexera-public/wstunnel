@@ -58,7 +58,7 @@ type WSTunnelClient struct {
 	Insecure       bool            // accept self-signed SSL certs from local HTTPS servers
 	Timeout        time.Duration   // timeout on websocket
 	Log            log15.Logger    // logger with "pkg=WStuncli"
-	Status         os.File         // output periodic tunnel status information
+	StatusFd       *os.File        // output periodic tunnel status information
 	exitChan       chan struct{}   // channel to tell the tunnel goroutines to end
 	ws             *websocket.Conn // websocket connection
 }
@@ -82,12 +82,23 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var tout *int = cliFlag.Int("timeout", 30, "timeout on websocket in seconds")
 	var pidf *string = cliFlag.String("pidfile", "", "path for pidfile")
 	var logf *string = cliFlag.String("logfile", "", "path for log file")
+	var statf *string = cliFlag.String("statusfile", "", "path for status file")
 
 	cliFlag.Parse(args)
 
 	wstunCli.Log = makeLogger("WStuncli", *logf, "")
 	writePid(*pidf)
 	wstunCli.Timeout = calcWsTimeout(*tout)
+
+	// process -statusfile
+	if *statf != "" {
+		fd, err := os.Create(*statf)
+		if err != nil {
+			log15.Crit("Can't create statusfile", "err", err.Error())
+			os.Exit(1)
+		}
+		wstunCli.StatusFd = fd
+	}
 
 	// process -regexp
 	if *sre != "" {
@@ -259,6 +270,12 @@ func (t *WSTunnelClient) pinger() {
 	// pong handler resets last pong time
 	ph := func(message string) error {
 		timer.Reset(t.Timeout)
+		if t.StatusFd != nil {
+			t.StatusFd.Seek(0, 0)
+			t.writeStatus()
+			pos, _ := t.StatusFd.Seek(0, 1)
+			t.StatusFd.Truncate(pos)
+		}
 		return nil
 	}
 	t.ws.SetPongHandler(ph)
@@ -272,6 +289,11 @@ func (t *WSTunnelClient) pinger() {
 	}
 	t.Log.Info("pinger ending (WS errored or closed)")
 	t.ws.Close()
+}
+
+func (t *WSTunnelClient) writeStatus() {
+	fmt.Fprintf(t.StatusFd, "Unix: %d\n", time.Now().Unix())
+	fmt.Fprintf(t.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339))
 }
 
 //===== HTTP Header Stuff =====

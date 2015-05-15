@@ -18,7 +18,7 @@ func init() { tunnel.SetVV(VV) } // propagate version
 
 func main() {
 	if len(os.Args) < 2 {
-		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv] [-options...]", os.Args[0]))
+		log15.Crit(fmt.Sprintf("Usage: %s [cli|srv|whois|version] [-options...]", os.Args[0]))
 		os.Exit(1)
 	}
 	switch os.Args[1] {
