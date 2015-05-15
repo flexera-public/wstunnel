@@ -58,6 +58,7 @@ type WSTunnelClient struct {
 	Insecure       bool            // accept self-signed SSL certs from local HTTPS servers
 	Timeout        time.Duration   // timeout on websocket
 	Log            log15.Logger    // logger with "pkg=WStuncli"
+	Status         os.File         // output periodic tunnel status information
 	exitChan       chan struct{}   // channel to tell the tunnel goroutines to end
 	ws             *websocket.Conn // websocket connection
 }
