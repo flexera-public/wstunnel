@@ -32,6 +32,9 @@ var _ fmt.Formatter
 
 var RetryError = errors.New("Error sending request, please retry")
 
+const tunnelInactiveKillTimeout = 60 * time.Minute   // close dead tunnels
+const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead tunnels
+
 //===== Data Structures =====
 
 const (
@@ -314,14 +317,19 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 Tries:
 	for tries := 1; tries <= 3; tries += 1 {
 		// get a hold of the remote server
-		rs = t.getRemoteServer(token(tok))
+		rs = t.getRemoteServer(token(tok), false)
+		if rs == nil {
+			req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "404",
+				"err", "Tunnel not found")
+			http.Error(w, "Tunnel not found (or not seen in a long time)", 404)
+			return
+		}
 
 		// enqueue request
 		err := rs.AddRequest(req)
 		if err != nil {
-			req.log.Info("HTTP RCV",
-				"verb", r.Method, "url", r.URL, "status", "504",
-				"addr", req.remoteAddr, "err", err.Error())
+			req.log.Info("HTTP RCV", "addr", req.remoteAddr, "status", "504",
+				"err", err.Error())
 			http.Error(w, err.Error(), 504)
 			break Tries
 		}
@@ -330,7 +338,7 @@ Tries:
 			try = fmt.Sprintf("(attempt #%d)", tries)
 		}
 		req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
-			"addr", req.remoteAddr, "try", try)
+			"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
 		// wait for response
 		select {
 		case resp := <-req.replyChan:
@@ -373,19 +381,17 @@ func tunnelHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 //===== Helpers =====
 
 // Sanitize the token for logging
-var cutRe = regexp.MustCompile("[^_]{16}==$")
-
 func cutToken(tok token) string {
-	return cutRe.ReplaceAllString(string(tok), "...")
+	return string(tok)[0:8] + "..."
 }
 
-func (t *WSTunnelServer) getRemoteServer(tok token) *remoteServer {
+func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 	t.serverRegistryMutex.Lock()
 	defer t.serverRegistryMutex.Unlock()
 
 	// lookup and return existing remote server
 	rs, ok := t.serverRegistry[tok]
-	if ok {
+	if ok || !create { // return null if create flag is not set
 		return rs
 	}
 	// construct new remote server
@@ -406,9 +412,9 @@ l:
 	for {
 		select {
 		case req := <-rs.requestQueue:
+			err := fmt.Errorf("Tunnel deleted due to inactivity, request cancelled")
 			select {
-			case req.replyChan <- responseBuffer{err: RetryError}: // non-blocking send
-				req.log.Info("WS tunnel not-seen timeout causes retry")
+			case req.replyChan <- responseBuffer{err: err}: // non-blocking send
 			default:
 			}
 		default:
@@ -433,7 +439,7 @@ func (rs *remoteServer) AddRequest(req *remoteRequest) error {
 		// enqueued!
 		return nil
 	default:
-		return errors.New("Too many requests in-flight")
+		return errors.New("Too many requests in-flight, tunnel broken?")
 	}
 }
 
@@ -490,8 +496,8 @@ func (t *WSTunnelServer) idleTunnelReaper() {
 	for {
 		t.serverRegistryMutex.Lock()
 		for _, rs := range t.serverRegistry {
-			if time.Since(rs.lastActivity) > 60*time.Minute {
-				rs.log.Warn("Tunnel not seen for too long, deleting",
+			if time.Since(rs.lastActivity) > tunnelInactiveKillTimeout {
+				rs.log.Warn("Tunnel not seen for a long time, deleting",
 					"ago", time.Since(rs.lastActivity))
 				// unlink so new tunnels/tokens use a new RemoteServer object
 				delete(t.serverRegistry, rs.token)

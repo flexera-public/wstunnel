@@ -48,7 +48,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logTok := cutToken(token(tok))
-	t.Log.Info("new connection", "token", logTok, "addr", addr)
+	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr)
 	// Upgrade to web sockets
 	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
 	if _, ok := err.(websocket.HandshakeError); ok {
@@ -59,7 +59,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Get/Create RemoteServer
-	rs := t.getRemoteServer(token(tok))
+	rs := t.getRemoteServer(token(tok), true)
 	rs.remoteAddr = addr
 	rs.lastActivity = time.Now()
 	// do reverse DNS lookup asynchronously

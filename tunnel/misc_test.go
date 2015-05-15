@@ -1,0 +1,63 @@
+// Copyright (c) 2015 RightScale, Inc. - see LICENSE
+
+package tunnel
+
+// Omega: Alt+937
+
+import (
+	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"net"
+	"net/http"
+	"os"
+	"strconv"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/ghttp"
+)
+
+var _ = Describe("Testing misc requests", func() {
+
+	var server *ghttp.Server
+	var wstunsrv *WSTunnelServer
+	var wstuncli *WSTunnelClient
+	var wstunUrl string
+	var wstunToken string
+
+	BeforeEach(func() {
+		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
+		server = ghttp.NewServer()
+		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
+
+		l, _ := net.Listen("tcp", "127.0.0.1:0")
+		wstunsrv = NewWSTunnelServer([]string{})
+		wstunsrv.Start(l)
+		fmt.Fprintf(os.Stderr, "Server started\n")
+		wstuncli = NewWSTunnelClient([]string{
+			"-token", wstunToken,
+			"-tunnel", "ws://" + l.Addr().String(),
+			"-server", server.URL(),
+		})
+		wstuncli.Start()
+		wstunUrl = "http://" + l.Addr().String()
+	})
+	AfterEach(func() {
+		wstuncli.Stop()
+		wstunsrv.Stop()
+		server.Close()
+	})
+
+	// Perform the test by running main() with the command line args set
+	It("Errors non-existing tunnels", func() {
+		resp, err := http.Get(wstunUrl + "/_token/badtokenbadtoken/hello")
+		Ω(err).ShouldNot(HaveOccurred())
+		respBody, err := ioutil.ReadAll(resp.Body)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(string(respBody)).Should(ContainSubstring("long time"))
+		Ω(resp.Header.Get("Content-Type")).Should(ContainSubstring("text/plain"))
+		Ω(resp.StatusCode).Should(Equal(404))
+	})
+
+})

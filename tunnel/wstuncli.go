@@ -156,7 +156,7 @@ func (t *WSTunnelClient) Start() error {
 			h.Add("Origin", t.Token)
 			url := fmt.Sprintf("%s/_tunnel", t.Tunnel)
 			timer := time.NewTimer(10 * time.Second)
-			t.Log.Info("WS   Opening", "url", url)
+			t.Log.Info("WS   Opening", "url", url, "token", t.Token[0:5]+"...")
 			var err error
 			var resp *http.Response
 			t.ws, resp, err = d.Dial(url, h)
