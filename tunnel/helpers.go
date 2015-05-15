@@ -44,7 +44,7 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 			os.Exit(1)
 		}
 		log.Info("Switching logging", "file", file)
-		h, err := log15.FileHandler(file, SimpleFormat())
+		h, err := log15.FileHandler(file, SimpleFormat(true))
 		if err != nil {
 			log.Crit("Can't create log file", "file", file, "err", err.Error())
 			os.Exit(1)
@@ -53,7 +53,7 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 		log.Info("Started logging here")
 	} else if facility != "" {
 		log.Info("Switching logging to syslog", "facility", facility)
-		h, err := log15.SyslogHandler(facility, SimpleFormat())
+		h, err := log15.SyslogHandler(facility, SimpleFormat(false))
 		if err != nil {
 			log.Crit("Can't connect to syslog", "err", err.Error())
 			os.Exit(1)
@@ -69,11 +69,15 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 const simpleTimeFormat = "2006-01-02 15:04:05"
 const simpleMsgJust = 40
 
-func SimpleFormat() log15.Format {
+func SimpleFormat(timestamps bool) log15.Format {
 	return log15.FormatFunc(func(r *log15.Record) []byte {
 		b := &bytes.Buffer{}
 		lvl := strings.ToUpper(r.Lvl.String())
-		fmt.Fprintf(b, "[%s] %s %s ", r.Time.Format(simpleTimeFormat), lvl, r.Msg)
+		if timestamps {
+			fmt.Fprintf(b, "[%s] %s %s ", r.Time.Format(simpleTimeFormat), lvl, r.Msg)
+		} else {
+			fmt.Fprintf(b, "%s %s ", lvl, r.Msg)
+		}
 
 		// try to justify the log output for short messages
 		if len(r.Ctx) > 0 && len(r.Msg) < simpleMsgJust {
