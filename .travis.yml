@@ -41,8 +41,9 @@ script:
   - export AWS_SECRET_ACCESS_KEY=${RSBIN_KEY}
   - make upload
   # Compute code coverage
-  - "echo 'mode: atomic' >total.coverprofile"
-  - for f in `find . -name \*.coverprofile`; do tail -n +2 $f >>total.coverprofile; done
+  - "echo 'mode: atomic' >_total"
+  - for f in `find . -name \*.coverprofile`; do tail -n +2 $f >>_total; done
+  - mv _total total.coverprofile
   - go tool cover -func=total.coverprofile > coverage.txt
   - export COVERAGE=$(grep "^total:" coverage.txt | grep -o "[0-9\.]*")
   - echo "Code Coverage is ${COVERAGE}%"
