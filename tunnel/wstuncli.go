@@ -63,6 +63,8 @@ type WSTunnelClient struct {
 	ws             *websocket.Conn // websocket connection
 }
 
+var httpClient http.Client // client used for all requests, gets special transport for -insecure
+
 //===== Main =====
 
 func NewWSTunnelClient(args []string) *WSTunnelClient {
@@ -141,6 +143,12 @@ func (t *WSTunnelClient) Start() error {
 
 	if t.Insecure {
 		t.Log.Info("Accepting unverified SSL certs from local HTTPS servers")
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+		httpClient = http.Client{Transport: tr}
 	}
 
 	if t.InternalServer != nil {
@@ -464,17 +472,6 @@ func (t *WSTunnelClient) finishRequest(id int16, req *http.Request) {
 	req.RequestURI = ""
 	log.Info("HTTP issuing request", "url", req.URL.String())
 
-	// Accept self-signed certs
-	client := http.Client{} // default client, rejects self-signed certs
-	if t.Insecure {
-		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}
-		client = http.Client{Transport: tr}
-	}
-
 	// Remove hop-by-hop headers
 	for _, h := range hopHeaders {
 		req.Header.Del(h)
@@ -482,7 +479,7 @@ func (t *WSTunnelClient) finishRequest(id int16, req *http.Request) {
 	// Issue the request to the HTTP server
 	dump, _ := httputil.DumpRequest(req, false)
 	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		//dump2, _ := httputil.DumpResponse(resp, true)
 		//log15.Info("handleWsRequests: request error", "err", err.Error(),

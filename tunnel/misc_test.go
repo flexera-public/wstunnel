@@ -41,6 +41,7 @@ var _ = Describe("Testing misc requests", func() {
 			"-token", wstunToken,
 			"-tunnel", "ws://" + listener.Addr().String(),
 			"-server", server.URL(),
+			"-timeout", "3",
 		})
 		wstuncli.Start()
 		wstunUrl = "http://" + listener.Addr().String()
