@@ -21,7 +21,7 @@ import (
 	"github.com/onsi/gomega/ghttp"
 )
 
-var _ = Describe("Testing sequential requests", func() {
+var _ = Describe("Testing basic requests", func() {
 
 	var server *ghttp.Server
 	var wstunsrv *WSTunnelServer

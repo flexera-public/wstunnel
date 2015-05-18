@@ -189,7 +189,11 @@ func (t *WSTunnelClient) Start() error {
 				// Safety setting
 				t.ws.SetReadLimit(100 * 1024 * 1024)
 				// Request Loop
-				t.Log.Info("WS   ready", "server", t.Server)
+				srv := t.Server
+				if t.InternalServer != nil {
+					srv = "<internal>"
+				}
+				t.Log.Info("WS   ready", "server", srv)
 				t.handleWsRequests()
 			}
 			// check whether we need to exit

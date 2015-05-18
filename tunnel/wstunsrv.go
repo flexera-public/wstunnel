@@ -131,7 +131,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	whoToken = *whoTok
 
 	wstunSrv.HttpTimeout = time.Duration(*httpTout) * time.Second
-	wstunSrv.Log.Info("Remote request timeout", "timeout", wstunSrv.HttpTimeout)
+	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HttpTimeout)
 
 	wstunSrv.exitChan = make(chan struct{}, 1)
 
