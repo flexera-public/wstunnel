@@ -4,9 +4,9 @@ WStunnel - Web Sockets Tunnel
 - Master:
 [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
 [![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_master.svg)](https://gocover.io/github.com/rightscale/wstunnel)
-- 1.0.3:
-[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.3)](https://travis-ci.org/rightscale/wstunnel)
-[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.3.svg)](https://gocover.io/github.com/rightscale/wstunnel)
+- 1.0.4:
+[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.4)](https://travis-ci.org/rightscale/wstunnel)
+[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.4.svg)](https://gocover.io/github.com/rightscale/wstunnel)
 
 WStunnel creates an HTTPS tunnel that can connect servers sitting
 behind an HTTP proxy and firewall to clients on the internet. It differs from many other projects
