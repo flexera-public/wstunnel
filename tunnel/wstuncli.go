@@ -31,10 +31,12 @@ import (
 	"regexp"
 	"runtime"
 	//"crypto/tls"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	_ "net/http/pprof"
@@ -57,6 +59,7 @@ type WSTunnelClient struct {
 	Regexp         *regexp.Regexp  // regexp for allowed local HTTP(S) servers
 	Insecure       bool            // accept self-signed SSL certs from local HTTPS servers
 	Timeout        time.Duration   // timeout on websocket
+	Proxy          *url.URL        // if non-nil, external proxy to use
 	Log            log15.Logger    // logger with "pkg=WStuncli"
 	StatusFd       *os.File        // output periodic tunnel status information
 	exitChan       chan struct{}   // channel to tell the tunnel goroutines to end
@@ -85,6 +88,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var pidf *string = cliFlag.String("pidfile", "", "path for pidfile")
 	var logf *string = cliFlag.String("logfile", "", "path for log file")
 	var statf *string = cliFlag.String("statusfile", "", "path for status file")
+	var proxy *string = cliFlag.String("proxy", "",
+		"use HTTPS proxy http://user:pass@hostname:port")
 
 	cliFlag.Parse(args)
 
@@ -111,6 +116,37 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 			os.Exit(1)
 		}
 	}
+
+	// process -proxy or look for standard unix env variables
+	if *proxy == "" {
+		envNames := []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"}
+		for _, n := range envNames {
+			if p := os.Getenv(n); p != "" {
+				*proxy = p
+				break
+			}
+		}
+	}
+	if *proxy != "" {
+		proxyURL, err := url.Parse(*proxy)
+		if err != nil || !strings.HasPrefix(proxyURL.Scheme, "http") {
+			// proxy was bogus. Try prepending "http://" to it and
+			// see if that parses correctly. If not, we fall
+			// through and complain about the original one.
+			if proxyURL, err = url.Parse("http://" + *proxy); err != nil {
+				log15.Crit(fmt.Sprintf("Invalid proxy address: %q, %v", *proxy, err))
+				os.Exit(1)
+			}
+		}
+
+		username := "(none)"
+		if u := proxyURL.User; u != nil {
+			username = u.Username()
+		}
+		log15.Info("WS   HTTPS proxy: ", "proxy", proxyURL.Host, "user", username)
+		wstunCli.Proxy = proxyURL
+	}
+
 	return &wstunCli
 }
 
@@ -169,6 +205,7 @@ func (t *WSTunnelClient) Start() error {
 	go func() {
 		for {
 			d := &websocket.Dialer{
+				NetDial:         t.wsProxyDialer,
 				ReadBufferSize:  100 * 1024,
 				WriteBufferSize: 100 * 1024,
 			}
@@ -307,6 +344,75 @@ func (t *WSTunnelClient) pinger() {
 func (t *WSTunnelClient) writeStatus() {
 	fmt.Fprintf(t.StatusFd, "Unix: %d\n", time.Now().Unix())
 	fmt.Fprintf(t.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339))
+}
+
+//===== Proxy support =====
+// Bits of this taken from golangs net/http/transport.go. Gorilla websocket lib
+// allows you to pass in a custom net.Dial function, which it will call instead
+// of net.Dial. net.Dial normally just opens up a tcp socket for you. We go one
+// extra step and issue an HTTP CONNECT command after the socket is open. After
+// HTTP CONNECT is issued and successful, we hand the reins back to gorilla,
+// which will then set up SSL and handle the websocket UPGRADE request.
+// Note this only handles HTTPS connections through the proxy. HTTP requires
+// header rewriting.
+func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Conn, err error) {
+	if t.Proxy == nil {
+		return net.Dial(network, addr)
+	}
+
+	conn, err = net.Dial("tcp", t.Proxy.Host)
+	if err != nil {
+		err = fmt.Errorf("WS: error connecting to proxy %s: %s", t.Proxy.Host, err.Error())
+		return nil, err
+	}
+
+	pa := proxyAuth(t.Proxy)
+
+	connectReq := &http.Request{
+		Method: "CONNECT",
+		URL:    &url.URL{Opaque: addr},
+		Host:   addr,
+		Header: make(http.Header),
+	}
+
+	if pa != "" {
+		connectReq.Header.Set("Proxy-Authorization", pa)
+	}
+	connectReq.Write(conn)
+
+	// Read and parse CONNECT response.
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, connectReq)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		//body, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 500))
+		//resp.Body.Close()
+		//return nil, errors.New("proxy refused connection" + string(body))
+		f := strings.SplitN(resp.Status, " ", 2)
+		conn.Close()
+		return nil, fmt.Errorf(f[1])
+	}
+	return conn, nil
+}
+
+// proxyAuth returns the Proxy-Authorization header to set
+// on requests, if applicable.
+func proxyAuth(proxy *url.URL) string {
+	if u := proxy.User; u != nil {
+		username := u.Username()
+		password, _ := u.Password()
+		return "Basic " + basicAuth(username, password)
+	}
+	return ""
+}
+
+// See 2 (end of page 4) http://www.ietf.org/rfc/rfc2617.txt
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
 //===== HTTP Header Stuff =====
