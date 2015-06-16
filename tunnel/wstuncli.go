@@ -139,11 +139,6 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 			}
 		}
 
-		username := "(none)"
-		if u := proxyURL.User; u != nil {
-			username = u.Username()
-		}
-		log15.Info("WS   HTTPS proxy: ", "proxy", proxyURL.Host, "user", username)
 		wstunCli.Proxy = proxyURL
 	}
 
@@ -193,6 +188,14 @@ func (t *WSTunnelClient) Start() error {
 		t.Log.Info("Dispatching to external server(s)", "server", t.Server, "regexp", t.Regexp)
 	} else {
 		return fmt.Errorf("Must specify internal server or server or regexp")
+	}
+
+	if t.Proxy != nil {
+		username := "(none)"
+		if u := t.Proxy.User; u != nil {
+			username = u.Username()
+		}
+		t.Log.Info("Using HTTPS proxy", "url", t.Proxy.Host, "user", username)
 	}
 
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
