@@ -124,12 +124,12 @@ lint:
 	#go tool vet -composites=false **/*.go
 
 travis-test: lint
-	GOMAXPROCS=1 ginkgo -r -cover
+	ginkgo -r -cover
 
 # running ginkgo twice, sadly, the problem is that -cover modifies the source code with the effect
 # that if there are errors the output of gingko refers to incorrect line numbers
 # tip: if you don't like colors use ginkgo -r -noColor
 test: lint
-	ginkgo -r
+	ginkgo -r -v
 	ginkgo -r -cover
 	go tool cover -func=`basename $$PWD`.coverprofile

@@ -129,6 +129,10 @@ Or to allow access to www.example.com and blog.example.com over http you might u
 
 Note the use of -server and -regexp, this is because the server named in -server is used when there is no X-Host header. The host in the -server option does not have to match the regexp but it is recommended for it match.
 
+### Using a Proxy
+
+WStunnel client may use a proxy as long as that proxy supports HTTPS CONNECT. Basic authentication may be used if the username and password are embedded in the url. For example, `-proxy http://myuser:mypass@proxy-server.com:3128`. In addition, the command line client will also respect the https_proxy/http_proxy environment variables if they're set. As websocket connections are very long lived, please set read timeouts on your proxy as high as possible. 
+
 ### Using Secure Web Sockets (SSL)
 
 WStunnel does not support SSL natively (although that would not be a big change). The recommended
