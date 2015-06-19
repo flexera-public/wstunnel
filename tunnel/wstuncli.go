@@ -318,6 +318,13 @@ func (t *WSTunnelClient) handleWsRequests() {
 
 // Pinger that keeps connections alive and terminates them if they seem stuck
 func (t *WSTunnelClient) pinger() {
+	defer func() {
+		// panics may occur in WriteControl (in unit tests at least) for closed
+		// websocket connections
+		if x := recover(); x != nil {
+			t.Log.Error("Panic in pinger", "err", x)
+		}
+	}()
 	t.Log.Info("pinger starting")
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
