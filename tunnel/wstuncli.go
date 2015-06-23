@@ -201,9 +201,9 @@ func (t *WSTunnelClient) Start() error {
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
 	// a fresh connection. We also block and wait for the initial WS connection to occur
 	// (or fail). This is also for test purposes, as we run into a race condition
-	// where the server tries to connect to the client before it can set up the connection.
+	// where we make requests to the server before the client connection is ready.
 	t.exitChan = make(chan struct{}, 1)
-	waitForConn := sync.NewCond(new(sync.Mutex))
+	waitForConn := make(chan struct{}, 1)
 
 	//===== Goroutine =====
 
@@ -223,7 +223,10 @@ func (t *WSTunnelClient) Start() error {
 			var err error
 			var resp *http.Response
 			t.ws, resp, err = d.Dial(url, h)
-			waitForConn.Signal()
+			select {
+			case waitForConn <- struct{}{}:
+			default:
+			}
 			if err != nil {
 				extra := ""
 				if resp != nil {
@@ -259,9 +262,7 @@ func (t *WSTunnelClient) Start() error {
 		}
 	}()
 
-	waitForConn.L.Lock()
-	waitForConn.Wait()
-	waitForConn.L.Unlock()
+	<-waitForConn
 
 	return nil
 }
