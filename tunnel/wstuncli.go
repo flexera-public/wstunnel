@@ -424,7 +424,7 @@ func (t *WSTunnelClient) finishInternalRequest(id int16, req *http.Request) {
 		return
 	}
 
-	log.Info("HTTP responded", "status", rw.resp.Status)
+	log.Info("HTTP responded", "status", rw.resp.StatusCode)
 	writeResponseMessage(t, id, rw.resp)
 }
 
