@@ -329,10 +329,15 @@ func (t *WSTunnelClient) pinger() {
 	t.Log.Info("pinger starting")
 	// timeout handler sends a close message, waits a few seconds, then kills the socket
 	timeout := func() {
+		if t.ws == nil {
+			return
+		}
 		t.ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
 		t.Log.Info("ping timeout, closing WS")
 		time.Sleep(5 * time.Second)
-		t.ws.Close()
+		if t.ws != nil {
+			t.ws.Close()
+		}
 	}
 	// timeout timer
 	timer := time.AfterFunc(t.Timeout, timeout)
@@ -350,6 +355,9 @@ func (t *WSTunnelClient) pinger() {
 	t.ws.SetPongHandler(ph)
 	// ping loop, ends when socket is closed...
 	for {
+		if t.ws == nil {
+			break
+		}
 		err := t.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(t.Timeout/3))
 		if err != nil {
 			break
