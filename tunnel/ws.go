@@ -29,6 +29,8 @@ const (
 	WS_write_error = iota
 )
 
+func wsp(ws *websocket.Conn) string { return fmt.Sprintf("%p", ws) }
+
 // Handler for websockets tunnel establishment requests
 func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	addr := r.Header.Get("X-Forwarded-For")
@@ -48,9 +50,9 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logTok := cutToken(token(tok))
-	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr)
 	// Upgrade to web sockets
 	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
+	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr, "ws", wsp(ws))
 	if _, ok := err.(websocket.HandshakeError); ok {
 		httpError(t.Log, w, logTok, "Not a websocket handshake", 400)
 		return
@@ -83,7 +85,7 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 	timeout := func() {
 		ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(1*time.Second))
 		time.Sleep(5 * time.Second)
-		rs.log.Info("WS closing due to ping timeout")
+		rs.log.Info("WS closing due to ping timeout", "ws", wsp(ws))
 		ws.Close()
 	}
 	// timeout timer
@@ -110,7 +112,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			// awesome...
 		case _ = <-ch:
 			// time to close shop
-			rs.log.Info("WS closing on signal")
+			rs.log.Info("WS closing on signal", "ws", wsp(ws))
 			ws.Close()
 			return
 		}
@@ -187,7 +189,7 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 		if err != nil {
 			break
 		}
-		rs.log.Info("WS   RCV", "id", id)
+		rs.log.Info("WS   RCV", "id", id, "ws", wsp(ws))
 		// try to match request
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
@@ -201,15 +203,15 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 			case req.replyChan <- rb:
 				// great!
 			default:
-				rs.log.Info("WS   RCV can't enqueue response", "id", id)
+				rs.log.Info("WS   RCV can't enqueue response", "id", id, "ws", wsp(ws))
 			}
 		} else {
-			rs.log.Info("%s #%d: WS   RCV orphan response", "id", id)
+			rs.log.Info("%s #%d: WS   RCV orphan response", "id", id, "ws", wsp(ws))
 		}
 	}
 	// print error message
 	if err != nil {
-		rs.log.Info("WS   closing", "token", log_token, "err", err.Error())
+		rs.log.Info("WS   closing", "token", log_token, "err", err.Error(), "ws", wsp(ws))
 	}
 	// close up shop
 	ch <- 0 // notify sender
