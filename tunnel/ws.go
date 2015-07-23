@@ -70,7 +70,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	}()
 	// Set safety limits
 	ws.SetReadLimit(100 * 1024 * 1024)
-	// Start timout handling
+	// Start timeout handling
 	wsSetPingHandler(t, ws, rs)
 	// Create synchronization channel
 	ch := make(chan int, 2)
@@ -168,7 +168,9 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 	for {
 		ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
 		// read a message from the tunnel
-		t, r, err := ws.NextReader()
+		var t int
+		var r io.Reader
+		t, r, err = ws.NextReader()
 		if err != nil {
 			break
 		}
@@ -185,7 +187,8 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 			break
 		}
 		// read request itself
-		buf, err := ioutil.ReadAll(r)
+		var buf []byte
+		buf, err = ioutil.ReadAll(r)
 		if err != nil {
 			break
 		}
