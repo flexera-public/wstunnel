@@ -375,7 +375,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
 			retry = true
 		}
-	case <-time.After(time.Duration(t.HttpTimeout) * time.Second):
+	case <-time.After(t.HttpTimeout):
 		// it timed out...
 		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
 		http.Error(w, "Tunnel timeout", 504)
