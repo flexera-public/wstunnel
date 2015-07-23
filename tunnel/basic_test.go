@@ -118,10 +118,17 @@ var _ = Describe("Testing requests", func() {
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 	})
 
+	var waitConnected = func(cli *WSTunnelClient) {
+		for !cli.Connected {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
 	var runTests = func() {
 		// Perform the test by running main() with the command line args set
 		It("Responds to hello requests", func() {
 			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			waitConnected(wstuncli)
 
 			server.AppendHandlers(
 				ghttp.CombineHandlers(
@@ -141,6 +148,7 @@ var _ = Describe("Testing requests", func() {
 
 		It("Gets error status", func() {
 			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			waitConnected(wstuncli)
 
 			server.AppendHandlers(
 				ghttp.CombineHandlers(
@@ -160,6 +168,7 @@ var _ = Describe("Testing requests", func() {
 
 		It("Does 100 requests", func() {
 			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			waitConnected(wstuncli)
 
 			const N = 100
 			for i := 0; i < N; i++ {
@@ -187,6 +196,7 @@ var _ = Describe("Testing requests", func() {
 
 		It("Does many requests with random sleeps", func() {
 			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			waitConnected(wstuncli)
 
 			const N = 20
 			server.RouteToHandler("GET", regexp.MustCompile(`^/hello/`),

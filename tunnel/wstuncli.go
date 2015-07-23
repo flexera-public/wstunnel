@@ -59,6 +59,7 @@ type WSTunnelClient struct {
 	Regexp         *regexp.Regexp  // regexp for allowed local HTTP(S) servers
 	Insecure       bool            // accept self-signed SSL certs from local HTTPS servers
 	Timeout        time.Duration   // timeout on websocket
+	Connected      bool            // true when we have an active connection to wstunsrv
 	Proxy          *url.URL        // if non-nil, external proxy to use
 	Log            log15.Logger    // logger with "pkg=WStuncli"
 	StatusFd       *os.File        // output periodic tunnel status information
@@ -199,11 +200,8 @@ func (t *WSTunnelClient) Start() error {
 	}
 
 	// for test purposes we have a signal that tells wstuncli to exit instead of reopening
-	// a fresh connection. We also block and wait for the initial WS connection to occur
-	// (or fail). This is also for test purposes, as we run into a race condition
-	// where we make requests to the server before the client connection is ready.
+	// a fresh connection.
 	t.exitChan = make(chan struct{}, 1)
-	waitForConn := make(chan struct{}, 1)
 
 	//===== Goroutine =====
 
@@ -223,10 +221,6 @@ func (t *WSTunnelClient) Start() error {
 			var err error
 			var resp *http.Response
 			t.ws, resp, err = d.Dial(url, h)
-			select {
-			case waitForConn <- struct{}{}:
-			default:
-			}
 			if err != nil {
 				extra := ""
 				if resp != nil {
@@ -249,7 +243,9 @@ func (t *WSTunnelClient) Start() error {
 					srv = "<internal>"
 				}
 				t.Log.Info("WS   ready", "server", srv)
+				t.Connected = true
 				t.handleWsRequests()
+				t.Connected = false
 			}
 			// check whether we need to exit
 			select {
@@ -261,8 +257,6 @@ func (t *WSTunnelClient) Start() error {
 			<-timer.C // ensure we don't open connections too rapidly
 		}
 	}()
-
-	<-waitForConn
 
 	return nil
 }

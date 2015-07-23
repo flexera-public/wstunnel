@@ -52,11 +52,14 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	logTok := cutToken(token(tok))
 	// Upgrade to web sockets
 	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
-	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr, "ws", wsp(ws))
 	if _, ok := err.(websocket.HandshakeError); ok {
+		t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
+			"err", "Not a websocket handshake")
 		httpError(t.Log, w, logTok, "Not a websocket handshake", 400)
 		return
 	} else if err != nil {
+		t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
+			"err", err.Error())
 		httpError(t.Log, w, logTok, err.Error(), 400)
 		return
 	}
@@ -64,6 +67,8 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	rs := t.getRemoteServer(token(tok), true)
 	rs.remoteAddr = addr
 	rs.lastActivity = time.Now()
+	t.Log.Info("WS new tunnel connection", "token", logTok, "addr", addr, "ws", wsp(ws),
+		"rs", rs)
 	// do reverse DNS lookup asynchronously
 	go func() {
 		rs.remoteName, rs.remoteWhois = ipAddrLookup(t.Log, rs.remoteAddr)
