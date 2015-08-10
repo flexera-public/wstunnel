@@ -87,7 +87,7 @@ var _ = Describe("Testing misc requests", func() {
 		Ω(resp.StatusCode).Should(Equal(200))
 
 		// break the tunnel
-		wstuncli.ws.Close()
+		wstuncli.conn.ws.Close()
 		time.Sleep(20 * time.Millisecond)
 
 		// second request

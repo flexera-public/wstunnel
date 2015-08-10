@@ -58,6 +58,9 @@ default: $(NAME)
 $(NAME): *.go version
 	go build -o $(NAME) .
 
+gopath:
+	@echo "export GOPATH=$(GOPATH)"
+
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
 build: depend $(NAME) build/$(NAME)-linux-amd64.tgz
 # build/$(NAME)-darwin-amd64.tgz build/$(NAME)-linux-arm.tgz build/$(NAME)-windows-amd64.zip
@@ -130,6 +133,6 @@ travis-test: lint
 # that if there are errors the output of gingko refers to incorrect line numbers
 # tip: if you don't like colors use ginkgo -r -noColor
 test: lint
-	ginkgo -r
-	ginkgo -r -cover
+	ginkgo -r -race -v
+	ginkgo -r -race -cover
 	go tool cover -func=`basename $$PWD`.coverprofile
