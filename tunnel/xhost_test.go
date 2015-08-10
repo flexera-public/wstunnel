@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -44,6 +45,10 @@ var _ = Describe("Testing xhost requests", func() {
 				"-server", server, "-regexp", regexp,
 			})
 			wstuncli.Start()
+			// wait for client to connect so we don't get a "tunnel never seen" response
+			for !wstuncli.Connected {
+				time.Sleep(10 * time.Millisecond)
+			}
 			return wstuncli
 		}
 	})
