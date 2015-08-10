@@ -133,6 +133,6 @@ travis-test: lint
 # that if there are errors the output of gingko refers to incorrect line numbers
 # tip: if you don't like colors use ginkgo -r -noColor
 test: lint
-	ginkgo -r -race -v
-	ginkgo -r -race -cover
+	ginkgo -r -v
+	ginkgo -r -cover
 	go tool cover -func=`basename $$PWD`.coverprofile

@@ -29,14 +29,18 @@ var _ = Describe("Testing misc requests", func() {
 	var wstunToken string
 
 	BeforeEach(func() {
+		// start ghttp to simulate target server
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 		server = ghttp.NewServer()
 		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
 
+		// start wstunsrv
 		listener, _ = net.Listen("tcp", "127.0.0.1:0")
 		wstunsrv = NewWSTunnelServer([]string{})
 		wstunsrv.Start(listener)
 		fmt.Fprintf(os.Stderr, "Server started\n")
+
+		// start wstuncli
 		wstuncli = NewWSTunnelClient([]string{
 			"-token", wstunToken,
 			"-tunnel", "ws://" + listener.Addr().String(),
@@ -45,6 +49,9 @@ var _ = Describe("Testing misc requests", func() {
 		})
 		wstuncli.Start()
 		wstunUrl = "http://" + listener.Addr().String()
+		for !wstuncli.Connected {
+			time.Sleep(10 * time.Millisecond)
+		}
 	})
 	AfterEach(func() {
 		wstuncli.Stop()
