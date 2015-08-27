@@ -633,8 +633,7 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 	}
 	// Issue the request to the HTTP server
 	dump, err := httputil.DumpRequest(req, false)
-	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1),
-		"body", req.Body)
+	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
 	if err != nil {
 		log.Warn("error dumping request", "err", err.Error())
 	}
