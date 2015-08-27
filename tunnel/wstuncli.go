@@ -301,6 +301,20 @@ func (wsc *WSConnection) handleRequests() {
 			wsc.Log.Info("WS   cannot read request ID", "err", err.Error())
 			break
 		}
+		// read the whole message, this is bounded (to something large) by the
+		// SetReadLimit on the websocket. We have to do this because we want to handle
+		// the request in a goroutine (see "go finish..Request" calls below) and the
+		// websocket doesn't allow us to have multiple goroutines reading...
+		buf, err := ioutil.ReadAll(r)
+		if err != nil {
+			wsc.Log.Info("WS   cannot read request message", "id", id, "err", err.Error())
+			break
+		}
+		if len(buf) > 1024*1024 {
+			wsc.Log.Info("WS   long message", "len", len(buf))
+		}
+		wsc.Log.Debug("WS   message", "len", len(buf))
+		r = bytes.NewReader(buf)
 		// read request itself
 		req, err := http.ReadRequest(bufio.NewReader(r))
 		if err != nil {
@@ -618,14 +632,17 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 		req.Header.Del(h)
 	}
 	// Issue the request to the HTTP server
-	dump, _ := httputil.DumpRequest(req, true)
-	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
+	dump, err := httputil.DumpRequest(req, false)
+	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1),
+		"body", req.Body)
+	if err != nil {
+		log.Warn("error dumping request", "err", err.Error())
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		//dump2, _ := httputil.DumpResponse(resp, true)
 		//log15.Info("handleWsRequests: request error", "err", err.Error(),
-		//	"req", strings.Replace(string(dump), "\r\n", " || ", -1),
-		//	"resp", strings.Replace(string(dump2), "\r\n", " || ", -1))
+		//	"req", strings.Replace(string(dump), "\r\n", " || ", -1))
 		log.Info("HTTP request error", "err", err.Error())
 		wsc.writeResponseMessage(id, concoctResponse(req, err.Error(), 502))
 		return
