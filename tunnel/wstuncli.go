@@ -289,7 +289,7 @@ func (wsc *WSConnection) handleRequests() {
 			break
 		}
 		if typ != websocket.BinaryMessage {
-			wsc.Log.Info("WS   invalid message type", "type", typ)
+			wsc.Log.Warn("WS   invalid message type", "type", typ)
 			break
 		}
 		// give the sender a minute to produce the request
@@ -298,7 +298,7 @@ func (wsc *WSConnection) handleRequests() {
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
 		if err != nil {
-			wsc.Log.Info("WS   cannot read request ID", "err", err.Error())
+			wsc.Log.Warn("WS   cannot read request ID", "err", err.Error())
 			break
 		}
 		// read the whole message, this is bounded (to something large) by the
@@ -307,7 +307,7 @@ func (wsc *WSConnection) handleRequests() {
 		// websocket doesn't allow us to have multiple goroutines reading...
 		buf, err := ioutil.ReadAll(r)
 		if err != nil {
-			wsc.Log.Info("WS   cannot read request message", "id", id, "err", err.Error())
+			wsc.Log.Warn("WS   cannot read request message", "id", id, "err", err.Error())
 			break
 		}
 		if len(buf) > 1024*1024 {
@@ -318,7 +318,7 @@ func (wsc *WSConnection) handleRequests() {
 		// read request itself
 		req, err := http.ReadRequest(bufio.NewReader(r))
 		if err != nil {
-			wsc.Log.Info("WS   cannot read request body", "id", id, "err", err.Error())
+			wsc.Log.Warn("WS   cannot read request body", "id", id, "err", err.Error())
 			break
 		}
 		// Hand off to goroutine to finish off while we read the next request

@@ -5,6 +5,7 @@ package tunnel
 // Omega: Alt+937
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,7 +14,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"sync"
@@ -146,6 +146,65 @@ var _ = Describe("Testing requests", func() {
 			Ω(err).ShouldNot(HaveOccurred())
 			Ω(string(respBody)).Should(Equal("WORLD"))
 			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
+			Ω(resp.StatusCode).Should(Equal(200))
+		})
+
+		It("Handles a very large request", func() {
+			// init and fill a 12MB buffer
+			reqSize := 12 * 1024 * 1024 // 12MB
+			reqSizeStr := strconv.Itoa(reqSize)
+			reqBody := make([]byte, reqSize)
+			for i := range reqBody {
+				reqBody[i] = byte(i % 256)
+			}
+
+			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			waitConnected(wstuncli)
+
+			server.AppendHandlers(
+				ghttp.CombineHandlers(
+					ghttp.VerifyRequest("POST", "/large-request"),
+					ghttp.VerifyHeaderKV("Content-Length", reqSizeStr),
+					ghttp.RespondWith(200, `WORLD`,
+						http.Header{"Content-Type": []string{"text/world"}}),
+				),
+			)
+
+			resp, err := http.Post(wstunUrl+"/_token/"+wstunToken+"/large-request",
+				"text/binary", bytes.NewReader(reqBody))
+			Ω(err).ShouldNot(HaveOccurred())
+			respBody, err := ioutil.ReadAll(resp.Body)
+			Ω(err).ShouldNot(HaveOccurred())
+			Ω(string(respBody)).Should(Equal("WORLD"))
+			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/world"))
+			Ω(resp.StatusCode).Should(Equal(200))
+		})
+
+		It("Handles a very large response", func() {
+			// init and fill a 12MB buffer
+			respSize := 12 * 1024 * 1024 // 12MB
+			respBody := make([]byte, respSize)
+			for i := range respBody {
+				respBody[i] = byte(i % 256)
+			}
+
+			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			waitConnected(wstuncli)
+
+			server.AppendHandlers(
+				ghttp.CombineHandlers(
+					ghttp.VerifyRequest("GET", "/large-response"),
+					ghttp.RespondWith(200, respBody,
+						http.Header{"Content-Type": []string{"text/binary"}}),
+				),
+			)
+
+			resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + "/large-response")
+			Ω(err).ShouldNot(HaveOccurred())
+			respRecv, err := ioutil.ReadAll(resp.Body)
+			Ω(err).ShouldNot(HaveOccurred())
+			Ω(respRecv).Should(Equal(respBody))
+			Ω(resp.Header.Get("Content-Type")).Should(Equal("text/binary"))
 			Ω(resp.StatusCode).Should(Equal(200))
 		})
 

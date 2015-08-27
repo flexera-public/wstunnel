@@ -191,13 +191,13 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 		if err != nil {
 			break
 		}
-		// read request itself
+		// read request itself, the size is limited by the SetReadLimit on the websocket
 		var buf []byte
 		buf, err = ioutil.ReadAll(r)
 		if err != nil {
 			break
 		}
-		rs.log.Info("WS   RCV", "id", id, "ws", wsp(ws))
+		rs.log.Info("WS   RCV", "id", id, "ws", wsp(ws), "len", len(buf))
 		// try to match request
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
