@@ -618,13 +618,14 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 		req.Header.Del(h)
 	}
 	// Issue the request to the HTTP server
-	dump, _ := httputil.DumpRequest(req, false)
-	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
+	dump, _ := httputil.DumpRequest(req, true)
+	//log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		//dump2, _ := httputil.DumpResponse(resp, true)
-		//log15.Info("handleWsRequests: request error", "err", err.Error(),
-		//	"req", string(dump), "resp", string(dump2))
+		dump2, _ := httputil.DumpResponse(resp, true)
+		log15.Info("handleWsRequests: request error", "err", err.Error(),
+			"req", strings.Replace(string(dump), "\r\n", " || ", -1),
+			"resp", strings.Replace(string(dump2), "\r\n", " || ", -1))
 		log.Info("HTTP request error", "err", err.Error())
 		wsc.writeResponseMessage(id, concoctResponse(req, err.Error(), 502))
 		return
