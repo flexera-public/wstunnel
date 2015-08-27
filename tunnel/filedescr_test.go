@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 var _ = Describe("Check against file descriptor leakage", func() {
@@ -43,12 +44,11 @@ var _ = Describe("Check against file descriptor leakage", func() {
 	BeforeEach(func() {
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 		server = ghttp.NewServer()
-		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
+		log15.Info("ghttp started", "url", server.URL())
 
 		l, _ := net.Listen("tcp", "127.0.0.1:0")
 		wstunsrv = NewWSTunnelServer([]string{})
 		wstunsrv.Start(l)
-		fmt.Fprintf(os.Stderr, "Server started\n")
 		wstuncli = NewWSTunnelClient([]string{
 			"-token", wstunToken,
 			"-tunnel", "ws://" + l.Addr().String(),
@@ -89,7 +89,7 @@ var _ = Describe("Check against file descriptor leakage", func() {
 			Ω(resp.StatusCode).Should(Equal(200))
 		}
 		endFd := countOpenFiles()
-		fmt.Fprintf(os.Stderr, "startFd=%d endFd=%d\n", startFd, endFd)
+		log15.Info("file descriptors", "startFd", startFd, "endFd", endFd)
 		Ω(endFd - startFd).Should(BeNumerically("<", 10))
 	})
 

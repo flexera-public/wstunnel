@@ -45,7 +45,7 @@ func copyAndClose(w, r net.Conn) {
 func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	//log.Printf("Proxy server got %#v\n", r)
 	proxyConnCount += 1
-	fmt.Printf("externalProxyServer proxying to %s %d\n", r.RequestURI, proxyConnCount)
+	log15.Info("externalProxyServer proxying", "url", r.RequestURI)
 
 	if r.Method != "CONNECT" {
 		errMsg := "CONNECT not passed to proxy"
@@ -100,7 +100,7 @@ var startClient = func(wstunToken string, wstunHost string, proxy *url.URL, serv
 		InternalServer: server,
 	}
 	wstuncli.Start()
-	fmt.Fprintf(os.Stderr, "Client started\n")
+	log15.Info("Client started")
 	return wstuncli
 }
 
@@ -124,6 +124,9 @@ var _ = Describe("Testing requests", func() {
 		}
 	}
 
+	// we runs tests twice: once against an internal server and once against an
+	// external server, this function runs the tests and we call it twice with a
+	// different set-up
 	var runTests = func() {
 		// Perform the test by running main() with the command line args set
 		It("Responds to hello requests", func() {
@@ -217,7 +220,6 @@ var _ = Describe("Testing requests", func() {
 			err := make([]error, N, N)
 			wg := sync.WaitGroup{}
 			wg.Add(N)
-			fmt.Fprintln(os.Stderr, "Launching N concurrent requests")
 			for i := 0; i < N; i++ {
 				go func(i int) {
 					txt := fmt.Sprintf("/hello/%d", i)
@@ -226,7 +228,6 @@ var _ = Describe("Testing requests", func() {
 				}(i)
 			}
 			wg.Wait()
-			fmt.Fprintln(os.Stderr, "Evaluating the N requests")
 			for i := 0; i < N; i++ {
 				txt := fmt.Sprintf("/hello/%d", i)
 				Ω(err[i]).ShouldNot(HaveOccurred())
@@ -253,7 +254,7 @@ var _ = Describe("Testing requests", func() {
 			wstunsrv.Start(l)
 			wstunUrl = "http://" + wstunHost
 
-			fmt.Fprintf(os.Stderr, "Server started\n")
+			log15.Info("Server started")
 		})
 		AfterEach(func() {
 			wstuncli.Stop()
@@ -284,7 +285,6 @@ var _ = Describe("Testing requests", func() {
 	Context("Basic requests", func() {
 		BeforeEach(func() {
 			server = ghttp.NewServer()
-			fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
 
 			l, _ := net.Listen("tcp", "127.0.0.1:0")
 			wstunHost = l.Addr().String()
@@ -292,7 +292,7 @@ var _ = Describe("Testing requests", func() {
 			wstunsrv.Start(l)
 			wstunUrl = "http://" + wstunHost
 
-			fmt.Fprintf(os.Stderr, "Server started\n")
+			log15.Info("Client started")
 
 			startClient = func(wstunToken string, wstunHost string, proxy *url.URL, server *ghttp.Server) *WSTunnelClient {
 				wstuncli = NewWSTunnelClient([]string{
@@ -301,7 +301,6 @@ var _ = Describe("Testing requests", func() {
 					"-server", server.URL(),
 				})
 				wstuncli.Start()
-				fmt.Fprintf(os.Stderr, "Client started\n")
 				return wstuncli
 			}
 

@@ -5,18 +5,17 @@ package tunnel
 // Omega: Alt+937
 
 import (
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 var _ = Describe("Testing misc requests", func() {
@@ -32,13 +31,12 @@ var _ = Describe("Testing misc requests", func() {
 		// start ghttp to simulate target server
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
 		server = ghttp.NewServer()
-		fmt.Fprintf(os.Stderr, "ghttp started on %s\n", server.URL())
+		log15.Info("ghttp started", "url", server.URL())
 
 		// start wstunsrv
 		listener, _ = net.Listen("tcp", "127.0.0.1:0")
 		wstunsrv = NewWSTunnelServer([]string{})
 		wstunsrv.Start(listener)
-		fmt.Fprintf(os.Stderr, "Server started\n")
 
 		// start wstuncli
 		wstuncli = NewWSTunnelClient([]string{
