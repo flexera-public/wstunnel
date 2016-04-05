@@ -184,3 +184,16 @@ server {
         }
 }
 ````
+
+### Reading wstunnel server logs
+Sample:
+```
+Apr  4 17:40:29 srv1 wstunsrv[7808]: INFO HTTP RCV      pkg=WStunsrv token=tech_x... id=19 verb=GET url=/ addr="10.210.2.11, 53.5.22.247" x-host= try=
+Apr  4 17:40:29 srv1 wstunsrv[7808]: INFO WS   SND      pkg=WStunsrv token=tech_x... id=19 info="GET /"
+Apr  4 17:40:29 srv1 wstunsrv[7808]: INFO WS   RCV      token=tech_x... id=19 ws=0xc20a416d20 len=393
+Apr  4 17:40:29 srv1 wstunsrv[7808]: INFO HTTP RET      pkg=WStunsrv token=tech_x... id=19 status=401
+```
+The first line says that wstunsrv received an HTTP request to be tunneled and assigned it id 19.
+The second line says that wstunsrv sent the request onto the appropriate websocket ("WS") to wstuncli.
+The third line says that it has received a response to request 19 over the websocket.
+The fourth line says that wstunsrv sent an HTTP response back to request 19, and that the status is a 401. What may not be obvious is that because it went round-trip to wstuncli the status code comes from wstuncli.
