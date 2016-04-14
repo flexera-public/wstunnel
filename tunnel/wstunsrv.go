@@ -273,12 +273,21 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 // payloadHeaderHandler handles payload requests with the tunnel token in the Host header.
 // Payload requests are requests that are to be forwarded through the tunnel.
 func payloadHeaderHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
+	// Token header is canonical source of session info
 	tok := r.Header.Get("X-Token")
+
+	// Use wildcard-DNS host header as a backup
+	if tok == "" {
+		components := strings.SplitN(r.Host, ".", 2)
+		tok = components[0]
+	}
+
 	if tok == "" {
 		t.Log.Info("HTTP Missing X-Token header", "req", r)
 		http.Error(w, "Missing X-Token header", 400)
 		return
 	}
+
 	payloadHandler(t, w, r, token(tok))
 }
 

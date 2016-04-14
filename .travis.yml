@@ -4,7 +4,7 @@
 # uploaded version. (Note: nothing is automatically garbage collected.)
 language: go
 go:
-  - 1.4
+  - 1.5
 env:
   global:
     # RSBIN_KEY= to upload to rightscale-binaries bucket in q&b acct:
