@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/inconshreveable/log15"
 	"github.com/rightscale/wstunnel/tunnel"
 	"github.com/rightscale/wstunnel/whois"
-	"github.com/inconshreveable/log15"
 )
 
 func init() { tunnel.SetVV(VV) } // propagate version

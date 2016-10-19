@@ -32,9 +32,6 @@ before_script: make build
 script:
   - export NAME=`basename $TRAVIS_BUILD_DIR`
   - make travis-test
-  - export PATH=./Godeps/_workspace/bin:$PATH
-  - ls Godeps/_workspace/bin
-  - echo $PATH
   - which gof3r
   # Deploy build result to s3
   - export AWS_ACCESS_KEY_ID=AKIAIX3L4RHHIREAHABQ
@@ -69,7 +66,7 @@ script:
   - export COVERAGE_INT=$(echo $COVERAGE | cut -d. -f1)
   - export BADGE_FILENAME=cc_badge_${TRAVIS_BRANCH}.svg
   - export BADGE_COLOR=$( if [ ${COVERAGE_INT} -gt 80 ] ; then echo brightgreen ; elif [ ${COVERAGE_INT} -gt 40 ] ; then echo yellow ; else echo red ; fi )
-  - wget "http://img.shields.io/badge/coverage-${COVERAGE}%25-${BADGE_COLOR}.svg" -O ${BADGE_FILENAME}
+  - curl --location "https://img.shields.io/badge/coverage-${COVERAGE}%25-${BADGE_COLOR}.svg" --output ${BADGE_FILENAME}
   - gof3r put -b rs-code-coverage -k ${NAME}/${BADGE_FILENAME} -m x-amz-acl:public-read -m cache-control:no-cache -m content-type:image/svg+xml < ${BADGE_FILENAME}
 
 notifications:

@@ -5,10 +5,10 @@ package main
 import (
 	"testing"
 
+	"github.com/inconshreveable/log15"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
-	"github.com/inconshreveable/log15"
 )
 
 func TestWstunnel(t *testing.T) {
