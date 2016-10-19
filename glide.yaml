@@ -1,0 +1,8 @@
+package: github.com/rightscale/wstunnel
+import:
+  - package: github.com/gorilla/websocket
+  - package: github.com/mattn/go-colorable
+  - package: github.com/inconshreveable/log15
+  # Used during tests
+  - package: github.com/onsi/ginkgo
+  - package: github.com/onsi/gomega

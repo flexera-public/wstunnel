@@ -11,7 +11,7 @@ import (
 
 	"github.com/rightscale/wstunnel/tunnel"
 	"github.com/rightscale/wstunnel/whois"
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/inconshreveable/log15"
 )
 
 func init() { tunnel.SetVV(VV) } // propagate version

@@ -9,7 +9,6 @@
 # - just 'make' builds for local OS/arch
 # - produces .tgz/.zip build output
 # - bundles *.sh files in ./script subdirectory
-# - produces version.go for each build with string in global variable VV, please
 #   print this using a --version option in the executable
 # - to include the build status and code coverage badge in CI use (replace NAME by what
 #   you set $(NAME) to further down, and also replace magnum.travis-ci.com by travis-ci.org for
@@ -23,43 +22,38 @@
 # test: runs unit tests recursively and produces code coverage stats and shows them
 # travis-test: just runs unit tests recursively
 # clean: removes build stuff
-#
-# HACKS - a couple of things here are unconventional in order to keep travis-ci fast:
-# - use 'godep save' on your laptop if you add dependencies, but we don't use godep in the
-#   makefile, instead, we simply add the godep workspace to the GOPATH
 
 #NAME=$(shell basename $$PWD)
 NAME=wstunnel
 BUCKET=rightscale-binaries
 ACL=public-read
 # dependencies that are not in Godep because they're used by the build&test process
-DEPEND=golang.org/x/tools/cmd/cover github.com/onsi/ginkgo/ginkgo \
-			 github.com/rlmcpherson/s3gof3r/gof3r github.com/tools/godep \
-			 golang.org/x/tools/cmd/vet
+DEPEND=golang.org/x/tools/cmd/cover \
+       github.com/onsi/ginkgo/ginkgo \
+			 github.com/rlmcpherson/s3gof3r/gof3r
+
+# glide to install (iff no version is already installed)
+GLIDE_VERSION=0.12.3
 
 #=== below this line ideally remains unchanged, add new targets at the end  ===
 
-TRAVIS_BRANCH?=dev
+GOOS=$(shell go env GOOS)
+GOARCH=$(shell go env GOARCH)
+
+TRAVIS_BRANCH?=$(shell git symbolic-ref HEAD 2>/dev/null | sed -e 's|refs/heads/||')
 DATE=$(shell date '+%F %T')
-TRAVIS_COMMIT?=$(shell git symbolic-ref HEAD | cut -d"/" -f 3)
-# by manually adding the godep workspace to the path we don't need to run godep itself
-ifeq ($(OS),Windows_NT)
-	SHELL:=/bin/dash
-	GOPATH:=$(shell cygpath --windows $(PWD))/Godeps/_workspace;$(GOPATH)
-else
-	SHELL:=/bin/bash
-	GOPATH:=$(PWD)/Godeps/_workspace:$(GOPATH)
-endif
-# because of the Godep path we build ginkgo into the godep workspace
-PATH:=$(PWD)/Godeps/_workspace/bin:$(PATH)
+TRAVIS_COMMIT?=$(shell git log -1 --pretty=format:%H)
+
+# produce a version string that is embedded into the binary that captures the branch, the date
+# and the commit we're building. This works particularly well if you are using release branch
+# names of the form "v1.2.3"
+VERSION=$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)
+VFLAG=-X 'main.VERSION=$(VERSION)'
 
 # the default target builds a binary in the top-level dir for whatever the local OS is
 default: $(NAME)
 $(NAME): *.go version
-	go build -o $(NAME) .
-
-gopath:
-	@echo "export GOPATH=$(GOPATH)"
+	go build -ldflags "$(VFLAG)" -o $(NAME) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
 build: depend $(NAME) build/$(NAME)-linux-amd64.tgz
@@ -102,7 +96,7 @@ upload: depend
 # produce a version string that is embedded into the binary that captures the branch, the date
 # and the commit we're building
 version:
-	@echo -e "package main\n\nconst VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
+	@echo "package main\n\nconst VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
 	  >version.go
 	@echo "version.go: `cat version.go`"
 
@@ -111,7 +105,15 @@ version:
 # there, like your laptop.
 depend:
 	go get $(DEPEND)
-	godep restore
+	make $(GOPATH)/bin/glide
+	glide install
+
+# install specified version of glide
+$(GOPATH)/bin/glide:
+	curl -sSfL --tlsv1 --connect-timeout 30 --max-time 180 --retry 3 https://github.com/Masterminds/glide/releases/download/v$(GLIDE_VERSION)/glide-v$(GLIDE_VERSION)-$(GOOS)-$(GOARCH).tar.gz | tar zxf -
+	mkdir -p $(GOPATH)/bin
+	mv $(GOOS)-$(GOARCH)/glide $(GOPATH)/bin/glide
+	rm -Rf $(GOOS)-$(GOARCH)
 
 clean:
 	rm -rf build _aws-sdk

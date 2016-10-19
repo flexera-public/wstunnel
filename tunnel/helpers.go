@@ -3,6 +3,7 @@ package tunnel
 import (
 	"bytes"
 	"fmt"
+	"log/syslog"
 	"net/http"
 	"os"
 	"reflect"
@@ -10,11 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/inconshreveable/log15"
 )
 
+// VV is intended to be replaced at build time via `go build -ldflags`.
 var VV string
 
+// SetVV overrides the default version string injected at build time.
 func SetVV(vv string) { VV = vv }
 
 func writePid(file string) {
@@ -53,7 +56,7 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 		log.Info("Started logging here")
 	} else if facility != "" {
 		log.Info("Switching logging to syslog", "facility", facility)
-		h, err := log15.SyslogHandler(facility, SimpleFormat(false))
+		h, err := log15.SyslogHandler(syslog.LOG_INFO, facility, SimpleFormat(false))
 		if err != nil {
 			log.Crit("Can't connect to syslog", "err", err.Error())
 			os.Exit(1)
@@ -69,6 +72,7 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 const simpleTimeFormat = "2006-01-02 15:04:05"
 const simpleMsgJust = 40
 
+// SimpleFormat creates an easy-to-read log15 formatter.
 func SimpleFormat(timestamps bool) log15.Format {
 	return log15.FormatFunc(func(r *log15.Record) []byte {
 		b := &bytes.Buffer{}
