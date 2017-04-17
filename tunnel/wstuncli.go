@@ -222,8 +222,8 @@ func (t *WSTunnelClient) Start() error {
 		for {
 			d := &websocket.Dialer{
 				NetDial:         t.wsProxyDialer,
-				ReadBufferSize:  100 * 1024,
-				WriteBufferSize: 100 * 1024,
+				ReadBufferSize:  1000 * 1024,
+				WriteBufferSize: 1000 * 1024,
 			}
 			h := make(http.Header)
 			h.Add("Origin", t.Token)
@@ -248,7 +248,7 @@ func (t *WSTunnelClient) Start() error {
 				t.conn = &WSConnection{ws: ws, tun: t,
 					Log: t.Log.New("ws", fmt.Sprintf("%p", ws))}
 				// Safety setting
-				ws.SetReadLimit(100 * 1024 * 1024)
+				ws.SetReadLimit(1000 * 1024 * 1024)
 				// Request Loop
 				srv := t.Server
 				if t.InternalServer != nil {

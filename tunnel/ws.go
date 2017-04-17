@@ -51,7 +51,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	}
 	logTok := cutToken(token(tok))
 	// Upgrade to web sockets
-	ws, err := websocket.Upgrade(w, r, nil, 100*1024, 100*1024)
+	ws, err := websocket.Upgrade(w, r, nil, 1000*1024, 1000*1024)
 	if _, ok := err.(websocket.HandshakeError); ok {
 		t.Log.Info("WS new tunnel connection rejected", "token", logTok, "addr", addr,
 			"err", "Not a websocket handshake")
@@ -74,7 +74,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		rs.remoteName, rs.remoteWhois = ipAddrLookup(t.Log, rs.remoteAddr)
 	}()
 	// Set safety limits
-	ws.SetReadLimit(100 * 1024 * 1024)
+	ws.SetReadLimit(1000 * 1024 * 1024)
 	// Start timeout handling
 	wsSetPingHandler(t, ws, rs)
 	// Create synchronization channel
