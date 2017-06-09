@@ -34,8 +34,7 @@ BUCKET=rightscale-binaries
 ACL=public-read
 # dependencies that are not in Godep because they're used by the build&test process
 DEPEND=golang.org/x/tools/cmd/cover github.com/onsi/ginkgo/ginkgo \
-			 github.com/rlmcpherson/s3gof3r/gof3r github.com/tools/godep \
-			 golang.org/x/tools/cmd/vet
+	github.com/rlmcpherson/s3gof3r/gof3r github.com/tools/godep
 
 #=== below this line ideally remains unchanged, add new targets at the end  ===
 
