@@ -92,7 +92,7 @@ On `wstun.example.com` start WStunnel server (I'll pick a port other than 80 for
 
     $ ./wstunnel srv -port 8080 &
     2014/01/19 09:51:31 Listening on port 8080
-    $ curl https://localhost:8080/_health_check
+    $ curl http://localhost:8080/_health_check
     WSTUNSRV RUNNING
     $ 
 
@@ -105,16 +105,16 @@ On `www.example.com` verify that you can access the local web site:
 
 Now set-up the tunnel:
 
-    $ ./wstunnel clii -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
+    $ ./wstunnel cli -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
     2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 
 ### Make a request through the tunnel
 
 On `client.example.com` use curl to make a request to the web server running on `www.example.com`:
 
-    $ curl 'https://wstun.example.com:8080/_token/my_b!g_$secret/some/web/page'
+    $ curl 'http://wstun.example.com:8080/_token/my_b!g_$secret/some/web/page'
     <html> .......
-    $ curl '-HX-Token:my_b!g_$secret' https://wstun.example.com:8080/some/web/page
+    $ curl '-HX-Token:my_b!g_$secret' http://wstun.example.com:8080/some/web/page
     <html> .......
 
 ### Targeting multiple web servers
