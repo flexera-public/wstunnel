@@ -31,3 +31,6 @@ wstuncli-*
 wstunnel
 Godeps/_workspace
 version.go
+
+# vendor
+vendor/
