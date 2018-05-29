@@ -4,7 +4,7 @@
 # uploaded version. (Note: nothing is automatically garbage collected.)
 language: go
 go:
-  - 1.4
+  - 1.10.x
 env:
   global:
     # RSBIN_KEY= to upload to rightscale-binaries bucket in q&b acct:
@@ -32,9 +32,6 @@ before_script: make build
 script:
   - export NAME=`basename $TRAVIS_BUILD_DIR`
   - make travis-test
-  - export PATH=./Godeps/_workspace/bin:$PATH
-  - ls Godeps/_workspace/bin
-  - echo $PATH
   - which gof3r
   # Deploy build result to s3
   - export AWS_ACCESS_KEY_ID=AKIAIX3L4RHHIREAHABQ

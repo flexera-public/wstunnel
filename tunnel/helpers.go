@@ -3,6 +3,7 @@ package tunnel
 import (
 	"bytes"
 	"fmt"
+	"log/syslog"
 	"net/http"
 	"os"
 	"reflect"
@@ -53,7 +54,7 @@ func makeLogger(pkg, file, facility string) log15.Logger {
 		log.Info("Started logging here")
 	} else if facility != "" {
 		log.Info("Switching logging to syslog", "facility", facility)
-		h, err := log15.SyslogHandler(facility, SimpleFormat(false))
+		h, err := log15.SyslogHandler(syslog.LOG_INFO, facility, SimpleFormat(false))
 		if err != nil {
 			log.Crit("Can't connect to syslog", "err", err.Error())
 			os.Exit(1)
