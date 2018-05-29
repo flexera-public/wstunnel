@@ -49,7 +49,7 @@ tokens that are registered by the WStunnel client. The steps are as follows:
    containing the secret token
  - WStunnel server forwards the request through the tunnel to WStunnel client
  - WStunnel client receives the request and issues the request to the local server
- - WStunnel client receives the HTTP reqponse and forwards that back through the tunnel, where
+ - WStunnel client receives the HTTP response and forwards that back through the tunnel, where
    WStunnel server receives it and hands it back to HTTP-client on the still-open original
    HTTP request
 
