@@ -49,7 +49,7 @@ tokens that are registered by the WStunnel client. The steps are as follows:
    containing the secret token
  - WStunnel server forwards the request through the tunnel to WStunnel client
  - WStunnel client receives the request and issues the request to the local server
- - WStunnel client receives the HTTP reqponse and forwards that back through the tunnel, where
+ - WStunnel client receives the HTTP response and forwards that back through the tunnel, where
    WStunnel server receives it and hands it back to HTTP-client on the still-open original
    HTTP request
 
@@ -92,7 +92,7 @@ On `wstun.example.com` start WStunnel server (I'll pick a port other than 80 for
 
     $ ./wstunnel srv -port 8080 &
     2014/01/19 09:51:31 Listening on port 8080
-    $ curl https://localhost:8080/_health_check
+    $ curl http://localhost:8080/_health_check
     WSTUNSRV RUNNING
     $ 
 
