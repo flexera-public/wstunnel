@@ -5,7 +5,7 @@
 TOKEN=
 
 # Local server to which HTTP requests are forwarded, this is the web server to which requests
-# are being tunneled. Currently only http is supported (not https).
+# are being tunneled.
 SERVER=http://localhost
 
 # Remote websockets tunnel endpoint to which this client connects to
