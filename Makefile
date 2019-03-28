@@ -26,6 +26,7 @@
 
 #NAME=$(shell basename $$PWD)
 NAME=wstunnel
+EXE:=$(NAME)$(shell go env GOEXE)
 BUCKET=rightscale-binaries
 ACL=public-read
 # dependencies not vendored because used by build & test process
@@ -36,13 +37,20 @@ TRAVIS_BRANCH?=dev
 DATE=$(shell date '+%F %T')
 TRAVIS_COMMIT?=$(shell git symbolic-ref HEAD | cut -d"/" -f 3)
 
+# This works around an issue between dep and Cygwin git by using Windows git instead.
+ifeq ($(shell go env GOHOSTOS),windows)
+  ifeq ($(shell git version | grep windows),)
+    export PATH:=$(shell cygpath 'C:\Program Files\Git\cmd'):$(PATH)
+  endif
+endif
+
 # the default target builds a binary in the top-level dir for whatever the local OS is
-default: $(NAME)
-$(NAME): *.go version
-	go build -o $(NAME) .
+default: $(EXE)
+$(EXE): *.go version
+	go build -o $(EXE) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
-build: depend $(NAME) build/$(NAME)-linux-amd64.tgz
+build: depend $(EXE) build/$(NAME)-linux-amd64.tgz
 # build/$(NAME)-darwin-amd64.tgz build/$(NAME)-linux-arm.tgz build/$(NAME)-windows-amd64.zip
 
 # create a tgz with the binary and any artifacts that are necessary
@@ -82,7 +90,7 @@ upload: depend
 # produce a version string that is embedded into the binary that captures the branch, the date
 # and the commit we're building
 version:
-	@echo "package main\n\nconst VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
+	@echo -e "package main\n\nconst VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
 	  >version.go
 	@echo "version.go: `cat version.go`"
 
