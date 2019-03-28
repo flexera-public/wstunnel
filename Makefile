@@ -110,11 +110,10 @@ clean:
 # gofmt uses the awkward *.go */*.go because gofmt -l . descends into the Godeps workspace
 # and then pointlessly complains about bad formatting in imported packages, sigh
 lint:
-	@if gofmt -l *.go | grep .go; then \
+	@if gofmt -l $(shell find . -type f -not -path './.*' -not -path './vendor/*' -not -name 'version.go' -name '*.go') | grep .go; then \
 	  echo "^- Repo contains improperly formatted go files; run gofmt -w *.go" && exit 1; \
 	  else echo "All .go files formatted correctly"; fi
-	go tool vet -composites=false *.go
-	#go tool vet -composites=false **/*.go
+	go vet ./...
 
 travis-test: lint
 	ginkgo -r -cover
