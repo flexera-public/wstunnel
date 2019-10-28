@@ -23,45 +23,34 @@
 # test: runs unit tests recursively and produces code coverage stats and shows them
 # travis-test: just runs unit tests recursively
 # clean: removes build stuff
-#
-# HACKS - a couple of things here are unconventional in order to keep travis-ci fast:
-# - use 'godep save' on your laptop if you add dependencies, but we don't use godep in the
-#   makefile, instead, we simply add the godep workspace to the GOPATH
 
 #NAME=$(shell basename $$PWD)
 NAME=wstunnel
+EXE:=$(NAME)$(shell go env GOEXE)
 BUCKET=rightscale-binaries
 ACL=public-read
-# dependencies that are not in Godep because they're used by the build&test process
-DEPEND=golang.org/x/tools/cmd/cover github.com/onsi/ginkgo/ginkgo \
-	github.com/rlmcpherson/s3gof3r/gof3r github.com/tools/godep
-
-#=== below this line ideally remains unchanged, add new targets at the end  ===
+# dependencies not vendored because used by build & test process
+DEPEND=golang.org/x/tools/cmd/cover github.com/rlmcpherson/s3gof3r/gof3r github.com/onsi/ginkgo/ginkgo
+HASDEP := $(shell dep version 2> /dev/null)
 
 TRAVIS_BRANCH?=dev
 DATE=$(shell date '+%F %T')
 TRAVIS_COMMIT?=$(shell git symbolic-ref HEAD | cut -d"/" -f 3)
-# by manually adding the godep workspace to the path we don't need to run godep itself
-ifeq ($(OS),Windows_NT)
-	SHELL:=/bin/dash
-	GOPATH:=$(shell cygpath --windows $(PWD))/Godeps/_workspace;$(GOPATH)
-else
-	SHELL:=/bin/bash
-	GOPATH:=$(PWD)/Godeps/_workspace:$(GOPATH)
+
+# This works around an issue between dep and Cygwin git by using Windows git instead.
+ifeq ($(shell go env GOHOSTOS),windows)
+  ifeq ($(shell git version | grep windows),)
+    export PATH:=$(shell cygpath 'C:\Program Files\Git\cmd'):$(PATH)
+  endif
 endif
-# because of the Godep path we build ginkgo into the godep workspace
-PATH:=$(PWD)/Godeps/_workspace/bin:$(PATH)
 
 # the default target builds a binary in the top-level dir for whatever the local OS is
-default: $(NAME)
-$(NAME): *.go version
-	go build -o $(NAME) .
-
-gopath:
-	@echo "export GOPATH=$(GOPATH)"
+default: $(EXE)
+$(EXE): *.go version
+	go build -o $(EXE) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
-build: depend $(NAME) build/$(NAME)-linux-amd64.tgz
+build: depend $(EXE) build/$(NAME)-linux-amd64.tgz
 # build/$(NAME)-darwin-amd64.tgz build/$(NAME)-linux-arm.tgz build/$(NAME)-windows-amd64.zip
 
 # create a tgz with the binary and any artifacts that are necessary
@@ -101,7 +90,7 @@ upload: depend
 # produce a version string that is embedded into the binary that captures the branch, the date
 # and the commit we're building
 version:
-	@echo -e "package main\n\nconst VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
+	@echo "package main; const VV = \"$(NAME) $(TRAVIS_BRANCH) - $(DATE) - $(TRAVIS_COMMIT)\"" \
 	  >version.go
 	@echo "version.go: `cat version.go`"
 
@@ -109,21 +98,22 @@ version:
 # Travis doing this. The folllowing just relies on go get no reinstalling when it's already
 # there, like your laptop.
 depend:
+ifndef HASDEP
+	curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+endif
 	go get $(DEPEND)
-	godep restore
+	dep ensure
 
 clean:
-	rm -rf build _aws-sdk
 	@echo "package main; const VV = \"$(NAME) unversioned - $(DATE)\"" >version.go
 
 # gofmt uses the awkward *.go */*.go because gofmt -l . descends into the Godeps workspace
 # and then pointlessly complains about bad formatting in imported packages, sigh
 lint:
-	@if gofmt -l *.go | grep .go; then \
+	@if gofmt -l $(shell find . -type f -not -path './.*' -not -path './vendor/*' -not -name 'version.go' -name '*.go') | grep .go; then \
 	  echo "^- Repo contains improperly formatted go files; run gofmt -w *.go" && exit 1; \
 	  else echo "All .go files formatted correctly"; fi
-	go tool vet -composites=false *.go
-	#go tool vet -composites=false **/*.go
+	go vet ./...
 
 travis-test: lint
 	ginkgo -r -cover

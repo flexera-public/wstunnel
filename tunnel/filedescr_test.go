@@ -35,7 +35,7 @@ var _ = Describe("Check against file descriptor leakage", func() {
 		out, err := exec.Command("/bin/sh", "-c",
 			fmt.Sprintf("lsof -p %v", os.Getpid())).Output()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("lsof -p: %s", err)
 		}
 		lines := bytes.Count(out, []byte("\n"))
 		return lines - 1
@@ -55,7 +55,8 @@ var _ = Describe("Check against file descriptor leakage", func() {
 			"-server", server.URL(),
 			"-insecure",
 		})
-		wstuncli.Start()
+		err := wstuncli.Start()
+		Ω(err).ShouldNot(HaveOccurred())
 		wstunUrl = "http://" + l.Addr().String()
 	})
 	AfterEach(func() {
@@ -65,6 +66,9 @@ var _ = Describe("Check against file descriptor leakage", func() {
 	})
 
 	It("Does not leak FDs after 100 requests", func() {
+		if _, err := exec.LookPath("lsof"); err != nil {
+			Skip("lsof not found")
+		}
 		const N = 100
 		for i := 0; i < N; i++ {
 			txt := fmt.Sprintf("/hello/%d", i)

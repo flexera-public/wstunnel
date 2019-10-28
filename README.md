@@ -49,7 +49,7 @@ tokens that are registered by the WStunnel client. The steps are as follows:
    containing the secret token
  - WStunnel server forwards the request through the tunnel to WStunnel client
  - WStunnel client receives the request and issues the request to the local server
- - WStunnel client receives the HTTP reqponse and forwards that back through the tunnel, where
+ - WStunnel client receives the HTTP response and forwards that back through the tunnel, where
    WStunnel server receives it and hands it back to HTTP-client on the still-open original
    HTTP request
 
@@ -105,16 +105,16 @@ On `www.example.com` verify that you can access the local web site:
 
 Now set-up the tunnel:
 
-    $ ./wstunnel cli -tunnel ws:/wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret'
+    $ ./wstunnel cli -tunnel ws://wstun.example.com:8080 -server http://localhost -token 'my_b!g_$secret!!'
     2014/01/19 09:54:51 Opening ws://wstun.example.com/_tunnel
 
 ### Make a request through the tunnel
 
 On `client.example.com` use curl to make a request to the web server running on `www.example.com`:
 
-    $ curl 'http://wstun.example.com:8080/_token/my_b!g_$secret/some/web/page'
+    $ curl 'https://wstun.example.com:8080/_token/my_b!g_$secret!!/some/web/page'
     <html> .......
-    $ curl '-HX-Token:my_b!g_$secret' http://wstun.example.com:8080/some/web/page
+    $ curl '-HX-Token:my_b!g_$secret!!' https://wstun.example.com:8080/some/web/page
     <html> .......
 
 ### Targeting multiple web servers
