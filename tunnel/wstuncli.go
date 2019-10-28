@@ -420,8 +420,10 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 				server, _ := net.ResolveTCPAddr("tcp", addr)
 				conn, err = net.DialTCP(network, client, server)
 				if err != nil {
-					return conn, nil
+					return nil, err
 				}
+				
+				return conn, nil
 			}
 		} else {
 			return net.Dial(network, addr)
