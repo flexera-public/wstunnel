@@ -13,8 +13,10 @@ import (
 	log15 "gopkg.in/inconshreveable/log15.v2"
 )
 
+//VV Used for versioning build
 var VV string
 
+//SetVV Used for versioning build
 func SetVV(vv string) { VV = vv }
 
 func writePid(file string) {
@@ -38,6 +40,7 @@ func writePid(file string) {
 const simpleTimeFormat = "2006-01-02 15:04:05"
 const simpleMsgJust = 40
 
+//SimpleFormat used to determine whether or not timestamps are added
 func SimpleFormat(timestamps bool) log15.Format {
 	return log15.FormatFunc(func(r *log15.Record) []byte {
 		b := &bytes.Buffer{}

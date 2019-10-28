@@ -24,7 +24,7 @@ var _ = Describe("Testing misc requests", func() {
 	var listener net.Listener
 	var wstunsrv *WSTunnelServer
 	var wstuncli *WSTunnelClient
-	var wstunUrl string
+	var wstunURL string
 	var wstunToken string
 
 	BeforeEach(func() {
@@ -46,7 +46,7 @@ var _ = Describe("Testing misc requests", func() {
 			"-timeout", "3",
 		})
 		wstuncli.Start()
-		wstunUrl = "http://" + listener.Addr().String()
+		wstunURL = "http://" + listener.Addr().String()
 		for !wstuncli.Connected {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -59,7 +59,7 @@ var _ = Describe("Testing misc requests", func() {
 
 	// Perform the test by running main() with the command line args set
 	It("Errors non-existing tunnels", func() {
-		resp, err := http.Get(wstunUrl + "/_token/badtokenbadtoken/hello")
+		resp, err := http.Get(wstunURL + "/_token/badtokenbadtoken/hello")
 		Ω(err).ShouldNot(HaveOccurred())
 		respBody, err := ioutil.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
@@ -83,7 +83,7 @@ var _ = Describe("Testing misc requests", func() {
 		)
 
 		// first request
-		resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + "/hello")
+		resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 		Ω(err).ShouldNot(HaveOccurred())
 		respBody, err := ioutil.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())
@@ -96,7 +96,7 @@ var _ = Describe("Testing misc requests", func() {
 		time.Sleep(20 * time.Millisecond)
 
 		// second request
-		resp, err = http.Get(wstunUrl + "/_token/" + wstunToken + "/hello")
+		resp, err = http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 		Ω(err).ShouldNot(HaveOccurred())
 		respBody, err = ioutil.ReadAll(resp.Body)
 		Ω(err).ShouldNot(HaveOccurred())

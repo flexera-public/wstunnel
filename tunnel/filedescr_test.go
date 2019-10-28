@@ -27,7 +27,7 @@ var _ = Describe("Check against file descriptor leakage", func() {
 	var server *ghttp.Server
 	var wstunsrv *WSTunnelServer
 	var wstuncli *WSTunnelClient
-	var wstunUrl string
+	var wstunURL string
 	var wstunToken string
 
 	// hack copied from https://groups.google.com/forum/#!topic/golang-nuts/c0AnWXjzNIA
@@ -57,7 +57,7 @@ var _ = Describe("Check against file descriptor leakage", func() {
 		})
 		err := wstuncli.Start()
 		Ω(err).ShouldNot(HaveOccurred())
-		wstunUrl = "http://" + l.Addr().String()
+		wstunURL = "http://" + l.Addr().String()
 	})
 	AfterEach(func() {
 		wstuncli.Stop()
@@ -84,7 +84,7 @@ var _ = Describe("Check against file descriptor leakage", func() {
 		startFd := countOpenFiles()
 		for i := 0; i < N; i++ {
 			txt := fmt.Sprintf("/hello/%d", i)
-			resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + txt)
+			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + txt)
 			Ω(err).ShouldNot(HaveOccurred())
 			respBody, err := ioutil.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
