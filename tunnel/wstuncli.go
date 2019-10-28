@@ -422,7 +422,7 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 				if err != nil {
 					return nil, err
 				}
-				
+
 				return conn, nil
 			}
 		} else {
