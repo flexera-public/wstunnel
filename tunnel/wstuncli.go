@@ -39,6 +39,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"net/url"
 	"strings"
@@ -83,6 +84,7 @@ var httpClient http.Client // client used for all requests, gets special transpo
 
 //===== Main =====
 
+//NewWSTunnelClient Creates a new WSTunnelClient from command line
 func NewWSTunnelClient(args []string) *WSTunnelClient {
 	wstunCli := WSTunnelClient{}
 
@@ -158,6 +160,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	return &wstunCli
 }
 
+//Start creates the wstunnel connection. 
 func (t *WSTunnelClient) Start() error {
 	t.Log.Info(VV)
 
@@ -273,6 +276,7 @@ func (t *WSTunnelClient) Start() error {
 	return nil
 }
 
+//Stop closes the wstunnel channel
 func (t *WSTunnelClient) Stop() {
 	t.exitChan <- struct{}{}
 }

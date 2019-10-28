@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+		// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"time"
 
@@ -168,7 +169,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 // Read responses from the tunnel and fulfill pending requests
 func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int) {
 	var err error
-	log_token := cutToken(rs.token)
+	logToken := cutToken(rs.token)
 	// continue reading until we get an error
 	for {
 		ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
@@ -219,7 +220,7 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 	}
 	// print error message
 	if err != nil {
-		rs.log.Info("WS   closing", "token", log_token, "err", err.Error(), "ws", wsp(ws))
+		rs.log.Info("WS   closing", "token", logToken, "err", err.Error(), "ws", wsp(ws))
 	}
 	// close up shop
 	ch <- 0 // notify sender
