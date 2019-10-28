@@ -30,6 +30,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+
 	//"crypto/tls"
 	"encoding/base64"
 	"flag"
@@ -69,6 +70,7 @@ type WSTunnelClient struct {
 	Connected      bool           // true when we have an active connection to wstunsrv
 	exitChan       chan struct{}  // channel to tell the tunnel goroutines to end
 	conn           *WSConnection
+	ClientPorts    []string // array of ports for client to listen on.
 	//ws             *websocket.Conn // websocket connection
 }
 
@@ -103,6 +105,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var statf *string = cliFlag.String("statusfile", "", "path for status file")
 	var proxy *string = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
+	var cliport *string = cliFlag.String("clientports", "", "comma separated list of client listening ports")
 
 	cliFlag.Parse(args)
 
@@ -153,6 +156,11 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		}
 
 		wstunCli.Proxy = proxyURL
+	}
+
+	if *cliport != "" {
+		ClientPort := strings.Split(*cliport, ",")
+		wstunCli.ClientPorts = ClientPort
 	}
 
 	return &wstunCli
@@ -406,7 +414,18 @@ func (wsc *WSConnection) writeStatus() {
 // header rewriting.
 func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Conn, err error) {
 	if t.Proxy == nil {
-		return net.Dial(network, addr)
+		if len(t.ClientPorts) != 0 {
+			for _, port := range t.ClientPorts {
+				client, _ := net.ResolveTCPAddr("tcp", ":"+port)
+				server, _ := net.ResolveTCPAddr("tcp", addr)
+				conn, err = net.DialTCP(network, client, server)
+				if err != nil {
+					return conn, nil
+				}
+			}
+		} else {
+			return net.Dial(network, addr)
+		}
 	}
 
 	conn, err = net.Dial("tcp", t.Proxy.Host)
