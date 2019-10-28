@@ -76,6 +76,7 @@ type remoteServer struct {
 
 type WSTunnelServer struct {
 	Port                int                     // port to listen on
+	Host                string                  // host to listen on
 	WSTimeout           time.Duration           // timeout on websockets
 	HttpTimeout         time.Duration           // timeout for HTTP requests
 	Log                 log15.Logger            // logger with "pkg=WStunsrv"
@@ -116,6 +117,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 
 	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
 	srvFlag.IntVar(&wstunSrv.Port, "port", 80, "port for http/ws server to listen on")
+	srvFlag.StringVar(&wstunSrv.Host, "host", "0.0.0.0", "host for http/ws server to listen on")
 	var pidf *string = srvFlag.String("pidfile", "", "path for pidfile")
 	var logf *string = srvFlag.String("logfile", "", "path for log file")
 	var tout *int = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
@@ -175,8 +177,8 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 
 	// Now create the listener and hook it all up
 	if listener == nil {
-		t.Log.Info("Listening", "port", t.Port)
-		laddr := fmt.Sprintf(":%d", t.Port)
+		t.Log.Info("Listening", "host", t.Host, "port", t.Port)
+		laddr := fmt.Sprintf("%s:%d", t.Host, t.Port)
 		var err error
 		listener, err = net.Listen("tcp", laddr)
 		if err != nil {
