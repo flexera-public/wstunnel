@@ -160,7 +160,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	return &wstunCli
 }
 
-//Start creates the wstunnel connection. 
+//Start creates the wstunnel connection.
 func (t *WSTunnelClient) Start() error {
 	t.Log.Info(VV)
 
