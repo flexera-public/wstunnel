@@ -431,10 +431,10 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Conn, err error) {
 	if t.Proxy == nil {
 		if len(t.ClientPorts) != 0 {
-			t.wsDialerLocalPort(network, addr, t.ClientPorts)
-		} else {
-			return net.Dial(network, addr)
+			conn, err = t.wsDialerLocalPort(network, addr, t.ClientPorts)
+			return conn, err
 		}
+		return net.Dial(network, addr)
 	}
 
 	conn, err = net.Dial("tcp", t.Proxy.Host)
