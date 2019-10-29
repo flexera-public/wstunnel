@@ -159,8 +159,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	}
 
 	if *cliport != "" {
-		ClientPort := strings.Split(*cliport, ",")
-		wstunCli.ClientPorts = ClientPort
+		ClientPorts := strings.Split(*cliport, ",")
+		wstunCli.ClientPorts = ClientPorts
 	}
 
 	return &wstunCli
@@ -403,6 +403,21 @@ func (wsc *WSConnection) writeStatus() {
 	fmt.Fprintf(wsc.tun.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339))
 }
 
+func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []string) (conn net.Conn, err error) {
+	for _, port := range ports {
+		client, _ := net.ResolveTCPAddr("tcp", ":"+port)
+		server, _ := net.ResolveTCPAddr("tcp", addr)
+		conn, err = net.DialTCP(network, client, server)
+		if (conn != nil) && (err == nil) {
+			return conn, nil
+		}
+		err = fmt.Errorf("WS: error connecting with local port %s: %s", port, err.Error())
+		t.Log.Info(err.Error())
+	}
+	err = fmt.Errorf("WS: Could not connect using any of the ports in range: ", strings.Join(ports, ","))
+	return nil, err
+}
+
 //===== Proxy support =====
 // Bits of this taken from golangs net/http/transport.go. Gorilla websocket lib
 // allows you to pass in a custom net.Dial function, which it will call instead
@@ -415,16 +430,7 @@ func (wsc *WSConnection) writeStatus() {
 func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Conn, err error) {
 	if t.Proxy == nil {
 		if len(t.ClientPorts) != 0 {
-			for _, port := range t.ClientPorts {
-				client, _ := net.ResolveTCPAddr("tcp", ":"+port)
-				server, _ := net.ResolveTCPAddr("tcp", addr)
-				conn, err = net.DialTCP(network, client, server)
-				if err != nil {
-					return nil, err
-				}
-
-				return conn, nil
-			}
+			t.wsDialerLocalPort(network, addr, t.ClientPorts)
 		} else {
 			return net.Dial(network, addr)
 		}
