@@ -28,8 +28,8 @@ import (
 // Our simple proxy server. This server: only handles proxying of HTTPS data via
 // CONNECT protocol, not HTTP. Also we don't bother to modify headers, such as
 // adding X-Forwarded-For as we don't test that.
-var proxyErrorLog string = ""
-var proxyConnCount int = 0
+var proxyErrorLog string
+var proxyConnCount int
 var proxyServer *httptest.Server
 
 func copyAndClose(w, r net.Conn) {
