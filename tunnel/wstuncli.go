@@ -33,6 +33,7 @@ import (
 
 	//"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -414,7 +415,7 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 		err = fmt.Errorf("WS: error connecting with local port %s: %s", port, err.Error())
 		t.Log.Info(err.Error())
 	}
-	err = fmt.Errorf("WS: Could not connect using any of the ports in range: ", strings.Join(ports, ","))
+	err = errors.New("WS: Could not connect using any of the ports in range: " + strings.Join(ports, ","))
 	return nil, err
 }
 
