@@ -43,6 +43,7 @@ import (
 	"net/http/httputil"
 	_ "net/http/pprof"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -106,7 +107,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var statf *string = cliFlag.String("statusfile", "", "path for status file")
 	var proxy *string = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
-	var cliport *string = cliFlag.String("clientports", "", "comma separated list of client listening ports")
+	var cliport *string = cliFlag.String("client-ports", "", "comma separated list of client listening ports")
 
 	cliFlag.Parse(args)
 
@@ -160,7 +161,29 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	}
 
 	if *cliport != "" {
-		ClientPorts := strings.Split(*cliport, ",")
+		portList := strings.Split(*cliport, ",")
+		var ClientPorts []string
+		for _, v := range portList {
+			if strings.Contains(v, "..") {
+				k := strings.Split(v, "..")
+				bInt, err := strconv.Atoi(k[0])
+				if err != nil {
+					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q %v", *cliport, err))
+					os.Exit(1)
+				}
+
+				eInt, err := strconv.Atoi(k[1])
+				if err != nil {
+					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q %v", *cliport, err))
+					os.Exit(1)
+				}
+				for n := bInt; n <= eInt; n++ {
+					strPort := strconv.Itoa(n)
+					ClientPorts = append(ClientPorts, strPort)
+				}
+			}
+			ClientPorts = append(ClientPorts, v)
+		}
 		wstunCli.ClientPorts = ClientPorts
 	}
 
@@ -406,8 +429,16 @@ func (wsc *WSConnection) writeStatus() {
 
 func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []string) (conn net.Conn, err error) {
 	for _, port := range ports {
-		client, _ := net.ResolveTCPAddr("tcp", ":"+port)
-		server, _ := net.ResolveTCPAddr("tcp", addr)
+		client, err := net.ResolveTCPAddr("tcp", ":"+port)
+		if err != nil {
+			return nil, err
+		}
+
+		server, err := net.ResolveTCPAddr("tcp", addr)
+		if err != nil {
+			return nil, err
+		}
+
 		conn, err = net.DialTCP(network, client, server)
 		if (conn != nil) && (err == nil) {
 			return conn, nil
