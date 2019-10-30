@@ -107,7 +107,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var statf *string = cliFlag.String("statusfile", "", "path for status file")
 	var proxy *string = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
-	var cliport *string = cliFlag.String("client-ports", "",
+	var cliports *string = cliFlag.String("client-ports", "",
 		"comma separated list of client listening ports ex: --client-ports 8000..8100,8300..8400,8500,8505")
 
 	cliFlag.Parse(args)
@@ -161,9 +161,11 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		wstunCli.Proxy = proxyURL
 	}
 
-	if *cliport != "" {
-		portList := strings.Split(*cliport, ",")
-		var clientPorts []int
+	if *cliports != "" {
+		portList := strings.Split(*cliports, ",")
+		clientPorts := []int{}
+		log15.Info("Attempting to start client with ports: " + *cliports)
+
 		for _, v := range portList {
 			if strings.Contains(v, "..") {
 				k := strings.Split(v, "..")
@@ -188,13 +190,14 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 					intPort := n
 					clientPorts = append(clientPorts, intPort)
 				}
+			} else {
+				intPort, err := strconv.Atoi(v)
+				if err != nil {
+					log15.Crit(fmt.Sprintf("Can not convert %q to integer", v))
+					os.Exit(1)
+				}
+				clientPorts = append(clientPorts, intPort)
 			}
-			intPort, err := strconv.Atoi(v)
-			if err != nil {
-				log15.Crit(fmt.Sprintf("Can not convert %q to integer", v))
-				os.Exit(1)
-			}
-			clientPorts = append(clientPorts, intPort)
 		}
 		wstunCli.ClientPorts = clientPorts
 	}
