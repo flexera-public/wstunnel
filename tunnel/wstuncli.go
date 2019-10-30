@@ -169,18 +169,18 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 				k := strings.Split(v, "..")
 				bInt, err := strconv.Atoi(k[0])
 				if err != nil {
-					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q %v", *cliport, err))
+					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q in range: %q", k[0], v))
 					os.Exit(1)
 				}
 
 				eInt, err := strconv.Atoi(k[1])
 				if err != nil {
-					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q %v", *cliport, err))
+					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q in range: %q", k[1], v))
 					os.Exit(1)
 				}
 
 				if eInt < bInt {
-					log15.Crit(fmt.Sprintf("End port can not be greater than beginning port %q %v", *cliport, err))
+					log15.Crit(fmt.Sprintf("End port %d can not be less than beginning port %d", eInt, bInt))
 					os.Exit(1)
 				}
 
@@ -189,7 +189,11 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 					clientPorts = append(clientPorts, intPort)
 				}
 			}
-			intPort, _ := strconv.Atoi(v)
+			intPort, err := strconv.Atoi(v)
+			if err != nil {
+				log15.Crit(fmt.Sprintf("Can not convert %q to integer", v))
+				os.Exit(1)
+			}
 			clientPorts = append(clientPorts, intPort)
 		}
 		wstunCli.ClientPorts = clientPorts
