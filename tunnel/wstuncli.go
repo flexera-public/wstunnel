@@ -72,7 +72,7 @@ type WSTunnelClient struct {
 	Connected      bool           // true when we have an active connection to wstunsrv
 	exitChan       chan struct{}  // channel to tell the tunnel goroutines to end
 	conn           *WSConnection
-	ClientPorts    []string // array of ports for client to listen on.
+	ClientPorts    []int // array of ports for client to listen on.
 	//ws             *websocket.Conn // websocket connection
 }
 
@@ -107,7 +107,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var statf *string = cliFlag.String("statusfile", "", "path for status file")
 	var proxy *string = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
-	var cliport *string = cliFlag.String("client-ports", "", "comma separated list of client listening ports")
+	var cliport *string = cliFlag.String("client-ports", "",
+		"comma separated list of client listening ports ex: --client-ports 8000..8100,8300..8400,8500,8505")
 
 	cliFlag.Parse(args)
 
@@ -162,7 +163,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 
 	if *cliport != "" {
 		portList := strings.Split(*cliport, ",")
-		var ClientPorts []string
+		var clientPorts []int
 		for _, v := range portList {
 			if strings.Contains(v, "..") {
 				k := strings.Split(v, "..")
@@ -177,14 +178,21 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q %v", *cliport, err))
 					os.Exit(1)
 				}
+
+				if eInt < bInt {
+					log15.Crit(fmt.Sprintf("End port can not be greater than beginning port %q %v", *cliport, err))
+					os.Exit(1)
+				}
+
 				for n := bInt; n <= eInt; n++ {
-					strPort := strconv.Itoa(n)
-					ClientPorts = append(ClientPorts, strPort)
+					intPort := n
+					clientPorts = append(clientPorts, intPort)
 				}
 			}
-			ClientPorts = append(ClientPorts, v)
+			intPort, _ := strconv.Atoi(v)
+			clientPorts = append(clientPorts, intPort)
 		}
-		wstunCli.ClientPorts = ClientPorts
+		wstunCli.ClientPorts = clientPorts
 	}
 
 	return &wstunCli
@@ -427,9 +435,10 @@ func (wsc *WSConnection) writeStatus() {
 	fmt.Fprintf(wsc.tun.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339))
 }
 
-func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []string) (conn net.Conn, err error) {
+func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []int) (conn net.Conn, err error) {
 	for _, port := range ports {
-		client, err := net.ResolveTCPAddr("tcp", ":"+port)
+		strPort := strconv.Itoa(port)
+		client, err := net.ResolveTCPAddr("tcp", ":"+strPort)
 		if err != nil {
 			return nil, err
 		}
@@ -443,10 +452,11 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 		if (conn != nil) && (err == nil) {
 			return conn, nil
 		}
-		err = fmt.Errorf("WS: error connecting with local port %s: %s", port, err.Error())
+		err = fmt.Errorf("WS: error connecting with local port %d: %s", port, err.Error())
 		t.Log.Info(err.Error())
 	}
-	err = errors.New("WS: Could not connect using any of the ports in range: " + strings.Join(ports, ","))
+	strPorts := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ports)), ","), "[]")
+	err = errors.New("WS: Could not connect using any of the ports in range: " + strPorts)
 	return nil, err
 }
 
