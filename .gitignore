@@ -34,3 +34,5 @@ version.go
 
 # vendor
 vendor/
+build/
+.vscode/

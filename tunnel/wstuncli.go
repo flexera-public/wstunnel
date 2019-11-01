@@ -30,8 +30,10 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+
 	//"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,6 +43,7 @@ import (
 	"net/http/httputil"
 	_ "net/http/pprof"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +72,7 @@ type WSTunnelClient struct {
 	Connected      bool           // true when we have an active connection to wstunsrv
 	exitChan       chan struct{}  // channel to tell the tunnel goroutines to end
 	conn           *WSConnection
+	ClientPorts    []int // array of ports for client to listen on.
 	//ws             *websocket.Conn // websocket connection
 }
 
@@ -103,6 +107,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var statf *string = cliFlag.String("statusfile", "", "path for status file")
 	var proxy *string = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
+	var cliports *string = cliFlag.String("client-ports", "",
+		"comma separated list of client listening ports ex: --client-ports 8000..8100,8300..8400,8500,8505")
 
 	cliFlag.Parse(args)
 
@@ -153,6 +159,47 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		}
 
 		wstunCli.Proxy = proxyURL
+	}
+
+	if *cliports != "" {
+		portList := strings.Split(*cliports, ",")
+		clientPorts := []int{}
+		log15.Info("Attempting to start client with ports: " + *cliports)
+
+		for _, v := range portList {
+			if strings.Contains(v, "..") {
+				k := strings.Split(v, "..")
+				bInt, err := strconv.Atoi(k[0])
+				if err != nil {
+					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q in range: %q", k[0], v))
+					os.Exit(1)
+				}
+
+				eInt, err := strconv.Atoi(k[1])
+				if err != nil {
+					log15.Crit(fmt.Sprintf("Invalid Port Assignment: %q in range: %q", k[1], v))
+					os.Exit(1)
+				}
+
+				if eInt < bInt {
+					log15.Crit(fmt.Sprintf("End port %d can not be less than beginning port %d", eInt, bInt))
+					os.Exit(1)
+				}
+
+				for n := bInt; n <= eInt; n++ {
+					intPort := n
+					clientPorts = append(clientPorts, intPort)
+				}
+			} else {
+				intPort, err := strconv.Atoi(v)
+				if err != nil {
+					log15.Crit(fmt.Sprintf("Can not convert %q to integer", v))
+					os.Exit(1)
+				}
+				clientPorts = append(clientPorts, intPort)
+			}
+		}
+		wstunCli.ClientPorts = clientPorts
 	}
 
 	return &wstunCli
@@ -395,6 +442,30 @@ func (wsc *WSConnection) writeStatus() {
 	fmt.Fprintf(wsc.tun.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339))
 }
 
+func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []int) (conn net.Conn, err error) {
+	for _, port := range ports {
+		client, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			return nil, err
+		}
+
+		server, err := net.ResolveTCPAddr("tcp", addr)
+		if err != nil {
+			return nil, err
+		}
+
+		conn, err = net.DialTCP(network, client, server)
+		if (conn != nil) && (err == nil) {
+			return conn, nil
+		}
+		err = fmt.Errorf("WS: error connecting with local port %d: %s", port, err.Error())
+		t.Log.Info(err.Error())
+	}
+
+	err = errors.New("WS: Could not connect using any of the ports in range: " + fmt.Sprint(ports))
+	return nil, err
+}
+
 //===== Proxy support =====
 // Bits of this taken from golangs net/http/transport.go. Gorilla websocket lib
 // allows you to pass in a custom net.Dial function, which it will call instead
@@ -406,6 +477,10 @@ func (wsc *WSConnection) writeStatus() {
 // header rewriting.
 func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Conn, err error) {
 	if t.Proxy == nil {
+		if len(t.ClientPorts) != 0 {
+			conn, err = t.wsDialerLocalPort(network, addr, t.ClientPorts)
+			return conn, err
+		}
 		return net.Dial(network, addr)
 	}
 
