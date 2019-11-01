@@ -462,7 +462,7 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 		err = fmt.Errorf("WS: error connecting with local port %d: %s", port, err.Error())
 		t.Log.Info(err.Error())
 	}
-	strPorts := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ports)), ","), "[]")
+	strPorts := fmt.Sprint(ports)
 	err = errors.New("WS: Could not connect using any of the ports in range: " + strPorts)
 	return nil, err
 }
