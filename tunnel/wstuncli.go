@@ -444,8 +444,7 @@ func (wsc *WSConnection) writeStatus() {
 
 func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []int) (conn net.Conn, err error) {
 	for _, port := range ports {
-		strPort := strconv.Itoa(port)
-		client, err := net.ResolveTCPAddr("tcp", ":"+strPort)
+		client, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
 			return nil, err
 		}
@@ -462,8 +461,8 @@ func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []
 		err = fmt.Errorf("WS: error connecting with local port %d: %s", port, err.Error())
 		t.Log.Info(err.Error())
 	}
-	strPorts := fmt.Sprint(ports)
-	err = errors.New("WS: Could not connect using any of the ports in range: " + strPorts)
+
+	err = errors.New("WS: Could not connect using any of the ports in range: " + fmt.Sprint(ports))
 	return nil, err
 }
 
