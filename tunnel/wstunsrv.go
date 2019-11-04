@@ -79,6 +79,7 @@ type remoteServer struct {
 	log             log15.Logger
 }
 
+//WSTunnelServer a wstunnel server construct
 type WSTunnelServer struct {
 	Port                int                     // port to listen on
 	Host                string                  // host to listen on
@@ -117,6 +118,7 @@ func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
 
 //===== Main =====
 
+//NewWSTunnelServer function to create wstunnel from cli
 func NewWSTunnelServer(args []string) *WSTunnelServer {
 	wstunSrv := WSTunnelServer{}
 
@@ -145,6 +147,7 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	return &wstunSrv
 }
 
+//Start wstunnel server start
 func (t *WSTunnelServer) Start(listener net.Listener) {
 	t.Log.Info(VV)
 	if t.serverRegistry != nil {
@@ -205,6 +208,7 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	}()
 }
 
+//Stop wstunnelserver stop
 func (t *WSTunnelServer) Stop() {
 	t.exitChan <- struct{}{}
 }
