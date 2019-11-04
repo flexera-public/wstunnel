@@ -68,7 +68,7 @@ type remoteRequest struct {
 // A remote server
 type remoteServer struct {
 	token           token                    // rendez-vous token for debug/logging
-	lastId          int16                    // id of last request
+	lastID          int16                    // id of last request
 	lastActivity    time.Time                // last activity on tunnel
 	remoteAddr      string                   // last remote addr of tunnel (debug)
 	remoteName      string                   // reverse DNS resolution of remoteAddr
@@ -266,7 +266,7 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		}
 		if len(t.requestSet) > 0 {
 			t.requestSetMutex.Lock()
-			if r, ok := t.requestSet[t.lastId]; ok {
+			if r, ok := t.requestSet[t.lastID]; ok {
 				fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr)
 			}
 			t.requestSetMutex.Unlock()
@@ -320,7 +320,7 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 	}
 
 	// repeatedly try to get a response
-	for tries := 1; tries <= 3; tries += 1 {
+	for tries := 1; tries <= 3; tries++ {
 		retry := getResponse(t, req, w, r, tok, tries)
 		if !retry {
 			return
@@ -450,8 +450,8 @@ func (rs *remoteServer) AddRequest(req *remoteRequest) error {
 	rs.requestSetMutex.Lock()
 	defer rs.requestSetMutex.Unlock()
 	if req.id < 0 {
-		rs.lastId = (rs.lastId + 1) % 32000
-		req.id = rs.lastId
+		rs.lastID = (rs.lastID + 1) % 32000
+		req.id = rs.lastID
 		req.log = req.log.New("id", req.id)
 	}
 	rs.requestSet[req.id] = req
