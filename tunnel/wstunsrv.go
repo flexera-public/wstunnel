@@ -41,8 +41,10 @@ const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead
 //===== Data Structures =====
 
 const (
-	MAX_REQ       = 20 // max queued requests per remote server
-	MIN_TOKEN_LEN = 16 // min number of chars in a token
+	//maxReq max queued requests per remote server
+	maxReq = 20
+	//minTokenLen min number of chars in a token
+	minTokenLen = 16
 )
 
 type token string
@@ -416,7 +418,7 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 	// construct new remote server
 	rs = &remoteServer{
 		token:        tok,
-		requestQueue: make(chan *remoteRequest, MAX_REQ),
+		requestQueue: make(chan *remoteRequest, maxReq),
 		requestSet:   make(map[int16]*remoteRequest),
 		log:          log15.New("token", cutToken(tok)),
 	}
