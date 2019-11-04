@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"time"
@@ -158,7 +159,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		req.log.Info("WS   SND", "info", req.info)
 	}
 	// tell the sender to retry the request
-	req.replyChan <- responseBuffer{err: RetryError}
+	req.replyChan <- responseBuffer{err: ErrRetry}
 	req.log.Info("WS error causes retry")
 	// close up shop
 	ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))

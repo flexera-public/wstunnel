@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"net/url"
@@ -31,7 +32,8 @@ var _ fmt.Formatter
 // https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
 //const cliTout = 300 // http read/write/idle timeout
 
-var RetryError = errors.New("Error sending request, please retry")
+//ErrRetry Error when sending request
+var ErrRetry = errors.New("Error sending request, please retry")
 
 const tunnelInactiveKillTimeout = 60 * time.Minute   // close dead tunnels
 const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead tunnels
@@ -252,12 +254,12 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		}
 		if t.lastActivity.IsZero() {
 			fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i)
-			badTunnels += 1
+			badTunnels++
 		} else {
 			fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i,
 				time.Since(t.lastActivity).Seconds())
 			if time.Since(t.lastActivity).Seconds() > 60 {
-				badTunnels += 1
+				badTunnels++
 			}
 		}
 		if len(t.requestSet) > 0 {
@@ -291,10 +293,10 @@ var matchToken = regexp.MustCompile("^/_token/([^/]+)(/.*)")
 // payloadPrefixHandler handles payload requests with the tunnel token in a URI prefix.
 // Payload requests are requests that are to be forwarded through the tunnel.
 func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
-	reqUrl := r.URL.String()
-	m := matchToken.FindStringSubmatch(reqUrl)
+	reqURL := r.URL.String()
+	m := matchToken.FindStringSubmatch(reqURL)
 	if len(m) != 3 {
-		t.Log.Info("HTTP Missing token or URI", "url", reqUrl)
+		t.Log.Info("HTTP Missing token or URI", "url", reqURL)
 		http.Error(w, "Missing token in URI", 400)
 		return
 	}
@@ -369,7 +371,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			return
 		}
 		// if it's a non-retryable error then write the error
-		if resp.err != RetryError {
+		if resp.err != ErrRetry {
 			req.log.Info("HTTP RET",
 				"status", "504", "err", resp.err.Error())
 			http.Error(w, resp.err.Error(), 504)
