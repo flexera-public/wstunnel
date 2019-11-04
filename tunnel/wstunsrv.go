@@ -125,12 +125,12 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
 	srvFlag.IntVar(&wstunSrv.Port, "port", 80, "port for http/ws server to listen on")
 	srvFlag.StringVar(&wstunSrv.Host, "host", "0.0.0.0", "host for http/ws server to listen on")
-	var pidf *string = srvFlag.String("pidfile", "", "path for pidfile")
-	var logf *string = srvFlag.String("logfile", "", "path for log file")
-	var tout *int = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
-	var httpTout *int = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
-	var slog *string = srvFlag.String("syslog", "", "syslog facility to log to")
-	var whoTok *string = srvFlag.String("robowhois", "", "robowhois.com API token")
+	var pidf = srvFlag.String("pidfile", "", "path for pidfile")
+	var logf = srvFlag.String("logfile", "", "path for log file")
+	var tout = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
+	var httpTout = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
+	var slog = srvFlag.String("syslog", "", "syslog facility to log to")
+	var whoTok = srvFlag.String("robowhois", "", "robowhois.com API token")
 
 	srvFlag.Parse(args)
 

@@ -25,10 +25,11 @@ func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code 
 	http.Error(w, err, code)
 }
 
+//websocket error constants
 const (
-	WS_read_close  = iota
-	WS_read_error  = iota
-	WS_write_error = iota
+	wsReadClose  = iota
+	wsReadError  = iota
+	wsWriteError = iota
 )
 
 func wsp(ws *websocket.Conn) string { return fmt.Sprintf("%p", ws) }

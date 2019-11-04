@@ -41,6 +41,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"net/url"
@@ -101,15 +102,15 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		"http server http[s]://hostname:port to send received requests to")
 	cliFlag.BoolVar(&wstunCli.Insecure, "insecure", false,
 		"accept self-signed SSL certs from local HTTPS servers")
-	var sre *string = cliFlag.String("regexp", "",
+	var sre = cliFlag.String("regexp", "",
 		"regexp for local HTTP(S) server to allow sending received requests to")
-	var tout *int = cliFlag.Int("timeout", 30, "timeout on websocket in seconds")
-	var pidf *string = cliFlag.String("pidfile", "", "path for pidfile")
-	var logf *string = cliFlag.String("logfile", "", "path for log file")
-	var statf *string = cliFlag.String("statusfile", "", "path for status file")
-	var proxy *string = cliFlag.String("proxy", "",
+	var tout = cliFlag.Int("timeout", 30, "timeout on websocket in seconds")
+	var pidf = cliFlag.String("pidfile", "", "path for pidfile")
+	var logf = cliFlag.String("logfile", "", "path for log file")
+	var statf = cliFlag.String("statusfile", "", "path for status file")
+	var proxy = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
-	var cliports *string = cliFlag.String("client-ports", "",
+	var cliports = cliFlag.String("client-ports", "",
 		"comma separated list of client listening ports ex: --client-ports 8000..8100,8300..8400,8500,8505")
 
 	cliFlag.Parse(args)
