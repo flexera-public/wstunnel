@@ -81,7 +81,7 @@ type WSTunnelServer struct {
 	Port                int                     // port to listen on
 	Host                string                  // host to listen on
 	WSTimeout           time.Duration           // timeout on websockets
-	HttpTimeout         time.Duration           // timeout for HTTP requests
+	HTTPTimeout         time.Duration           // timeout for HTTP requests
 	Log                 log15.Logger            // logger with "pkg=WStunsrv"
 	exitChan            chan struct{}           // channel to tell the tunnel goroutines to end
 	serverRegistry      map[token]*remoteServer // active remote servers indexed by token
@@ -135,8 +135,8 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	wstunSrv.WSTimeout = calcWsTimeout(*tout)
 	whoToken = *whoTok
 
-	wstunSrv.HttpTimeout = time.Duration(*httpTout) * time.Second
-	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HttpTimeout)
+	wstunSrv.HTTPTimeout = time.Duration(*httpTout) * time.Second
+	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HTTPTimeout)
 
 	wstunSrv.exitChan = make(chan struct{}, 1)
 
@@ -307,7 +307,7 @@ func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 // payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
 func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, tok token) {
 	// create the request object
-	req := makeRequest(r, t.HttpTimeout)
+	req := makeRequest(r, t.HTTPTimeout)
 	req.log = t.Log.New("token", cutToken(tok))
 	//req.token = tok
 	//log_token := cutToken(tok)
@@ -380,7 +380,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
 			retry = true
 		}
-	case <-time.After(t.HttpTimeout):
+	case <-time.After(t.HTTPTimeout):
 		// it timed out...
 		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
 		http.Error(w, "Tunnel timeout", 504)
