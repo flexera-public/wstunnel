@@ -11,14 +11,19 @@ import (
 	"regexp"
 )
 
+//DataPart host/body of data
 type DataPart struct {
 	Body string `json:"body"`
 	Host string `json:"host"`
 }
+
+//DataResponse daystamp and parts
 type DataResponse struct {
 	Daystamp string     `json:"daystamp"`
 	Parts    []DataPart `json:"parts"`
 }
+
+//Data is response body
 type Data struct {
 	Response DataResponse `json:"response"`
 }
@@ -26,6 +31,7 @@ type Data struct {
 var orgNameRe = regexp.MustCompile("Org[^a-zA-Z]?Name[^a-zA-Z]*([ -~]*)")
 var netNameRe = regexp.MustCompile("network:Organization[^a-zA-Z]*([ -~]*)")
 
+//Whois determines ip information from robowhois
 func Whois(ipAddr, apiToken string) string {
 	url := fmt.Sprint("http://api.robowhois.com/v1/whois/", ipAddr, "/parts")
 	req, err := http.NewRequest("GET", url, nil)
@@ -65,6 +71,6 @@ func Whois(ipAddr, apiToken string) string {
 	return result
 }
 
-func test_main() {
+func testMain() {
 	fmt.Printf("%s -> %s\n", os.Args[1], Whois(os.Args[1], os.Args[2]))
 }

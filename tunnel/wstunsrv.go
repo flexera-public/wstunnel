@@ -11,6 +11,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+
+	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"net/url"
 	"os"
@@ -30,7 +32,8 @@ var _ fmt.Formatter
 // https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
 //const cliTout = 300 // http read/write/idle timeout
 
-var RetryError = errors.New("Error sending request, please retry")
+//ErrRetry Error when sending request
+var ErrRetry = errors.New("Error sending request, please retry")
 
 const tunnelInactiveKillTimeout = 60 * time.Minute   // close dead tunnels
 const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead tunnels
@@ -38,8 +41,10 @@ const tunnelInactiveRefuseTimeout = 10 * time.Minute // refuse requests for dead
 //===== Data Structures =====
 
 const (
-	MAX_REQ       = 20 // max queued requests per remote server
-	MIN_TOKEN_LEN = 16 // min number of chars in a token
+	//maxReq max queued requests per remote server
+	maxReq = 20
+	//minTokenLen min number of chars in a token
+	minTokenLen = 16
 )
 
 type token string
@@ -63,7 +68,7 @@ type remoteRequest struct {
 // A remote server
 type remoteServer struct {
 	token           token                    // rendez-vous token for debug/logging
-	lastId          int16                    // id of last request
+	lastID          int16                    // id of last request
 	lastActivity    time.Time                // last activity on tunnel
 	remoteAddr      string                   // last remote addr of tunnel (debug)
 	remoteName      string                   // reverse DNS resolution of remoteAddr
@@ -74,11 +79,12 @@ type remoteServer struct {
 	log             log15.Logger
 }
 
+//WSTunnelServer a wstunnel server construct
 type WSTunnelServer struct {
 	Port                int                     // port to listen on
 	Host                string                  // host to listen on
 	WSTimeout           time.Duration           // timeout on websockets
-	HttpTimeout         time.Duration           // timeout for HTTP requests
+	HTTPTimeout         time.Duration           // timeout for HTTP requests
 	Log                 log15.Logger            // logger with "pkg=WStunsrv"
 	exitChan            chan struct{}           // channel to tell the tunnel goroutines to end
 	serverRegistry      map[token]*remoteServer // active remote servers indexed by token
@@ -112,18 +118,19 @@ func ipAddrLookup(log log15.Logger, ipAddr string) (dns, who string) {
 
 //===== Main =====
 
+//NewWSTunnelServer function to create wstunnel from cli
 func NewWSTunnelServer(args []string) *WSTunnelServer {
 	wstunSrv := WSTunnelServer{}
 
 	var srvFlag = flag.NewFlagSet("server", flag.ExitOnError)
 	srvFlag.IntVar(&wstunSrv.Port, "port", 80, "port for http/ws server to listen on")
 	srvFlag.StringVar(&wstunSrv.Host, "host", "0.0.0.0", "host for http/ws server to listen on")
-	var pidf *string = srvFlag.String("pidfile", "", "path for pidfile")
-	var logf *string = srvFlag.String("logfile", "", "path for log file")
-	var tout *int = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
-	var httpTout *int = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
-	var slog *string = srvFlag.String("syslog", "", "syslog facility to log to")
-	var whoTok *string = srvFlag.String("robowhois", "", "robowhois.com API token")
+	var pidf = srvFlag.String("pidfile", "", "path for pidfile")
+	var logf = srvFlag.String("logfile", "", "path for log file")
+	var tout = srvFlag.Int("wstimeout", 30, "timeout on websocket in seconds")
+	var httpTout = srvFlag.Int("httptimeout", 20*60, "timeout for http requests in seconds")
+	var slog = srvFlag.String("syslog", "", "syslog facility to log to")
+	var whoTok = srvFlag.String("robowhois", "", "robowhois.com API token")
 
 	srvFlag.Parse(args)
 
@@ -132,14 +139,15 @@ func NewWSTunnelServer(args []string) *WSTunnelServer {
 	wstunSrv.WSTimeout = calcWsTimeout(*tout)
 	whoToken = *whoTok
 
-	wstunSrv.HttpTimeout = time.Duration(*httpTout) * time.Second
-	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HttpTimeout)
+	wstunSrv.HTTPTimeout = time.Duration(*httpTout) * time.Second
+	wstunSrv.Log.Info("Setting remote request timeout", "timeout", wstunSrv.HTTPTimeout)
 
 	wstunSrv.exitChan = make(chan struct{}, 1)
 
 	return &wstunSrv
 }
 
+//Start wstunnel server start
 func (t *WSTunnelServer) Start(listener net.Listener) {
 	t.Log.Info(VV)
 	if t.serverRegistry != nil {
@@ -200,6 +208,7 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 	}()
 }
 
+//Stop wstunnelserver stop
 func (t *WSTunnelServer) Stop() {
 	t.exitChan <- struct{}{}
 }
@@ -251,17 +260,17 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		}
 		if t.lastActivity.IsZero() {
 			fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i)
-			badTunnels += 1
+			badTunnels++
 		} else {
 			fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i,
 				time.Since(t.lastActivity).Seconds())
 			if time.Since(t.lastActivity).Seconds() > 60 {
-				badTunnels += 1
+				badTunnels++
 			}
 		}
 		if len(t.requestSet) > 0 {
 			t.requestSetMutex.Lock()
-			if r, ok := t.requestSet[t.lastId]; ok {
+			if r, ok := t.requestSet[t.lastID]; ok {
 				fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr)
 			}
 			t.requestSetMutex.Unlock()
@@ -290,10 +299,10 @@ var matchToken = regexp.MustCompile("^/_token/([^/]+)(/.*)")
 // payloadPrefixHandler handles payload requests with the tunnel token in a URI prefix.
 // Payload requests are requests that are to be forwarded through the tunnel.
 func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
-	reqUrl := r.URL.String()
-	m := matchToken.FindStringSubmatch(reqUrl)
+	reqURL := r.URL.String()
+	m := matchToken.FindStringSubmatch(reqURL)
 	if len(m) != 3 {
-		t.Log.Info("HTTP Missing token or URI", "url", reqUrl)
+		t.Log.Info("HTTP Missing token or URI", "url", reqURL)
 		http.Error(w, "Missing token in URI", 400)
 		return
 	}
@@ -304,7 +313,7 @@ func payloadPrefixHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Requ
 // payloadHandler is called by payloadHeaderHandler and payloadPrefixHandler to do the real work.
 func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, tok token) {
 	// create the request object
-	req := makeRequest(r, t.HttpTimeout)
+	req := makeRequest(r, t.HTTPTimeout)
 	req.log = t.Log.New("token", cutToken(tok))
 	//req.token = tok
 	//log_token := cutToken(tok)
@@ -315,7 +324,7 @@ func payloadHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request, t
 	}
 
 	// repeatedly try to get a response
-	for tries := 1; tries <= 3; tries += 1 {
+	for tries := 1; tries <= 3; tries++ {
 		retry := getResponse(t, req, w, r, tok, tries)
 		if !retry {
 			return
@@ -368,7 +377,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			return
 		}
 		// if it's a non-retryable error then write the error
-		if resp.err != RetryError {
+		if resp.err != ErrRetry {
 			req.log.Info("HTTP RET",
 				"status", "504", "err", resp.err.Error())
 			http.Error(w, resp.err.Error(), 504)
@@ -377,7 +386,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 			req.log.Info("WS   retrying", "verb", r.Method, "url", r.URL)
 			retry = true
 		}
-	case <-time.After(t.HttpTimeout):
+	case <-time.After(t.HTTPTimeout):
 		// it timed out...
 		req.log.Info("HTTP RET", "status", "504", "err", "Tunnel timeout")
 		http.Error(w, "Tunnel timeout", 504)
@@ -413,7 +422,7 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 	// construct new remote server
 	rs = &remoteServer{
 		token:        tok,
-		requestQueue: make(chan *remoteRequest, MAX_REQ),
+		requestQueue: make(chan *remoteRequest, maxReq),
 		requestSet:   make(map[int16]*remoteRequest),
 		log:          log15.New("token", cutToken(tok)),
 	}
@@ -445,8 +454,8 @@ func (rs *remoteServer) AddRequest(req *remoteRequest) error {
 	rs.requestSetMutex.Lock()
 	defer rs.requestSetMutex.Unlock()
 	if req.id < 0 {
-		rs.lastId = (rs.lastId + 1) % 32000
-		req.id = rs.lastId
+		rs.lastID = (rs.lastID + 1) % 32000
+		req.id = rs.lastID
 		req.log = req.log.New("id", req.id)
 	}
 	rs.requestSet[req.id] = req

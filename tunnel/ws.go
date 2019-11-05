@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+
+	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
 	"time"
 
@@ -23,10 +25,11 @@ func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code 
 	http.Error(w, err, code)
 }
 
+//websocket error constants
 const (
-	WS_read_close  = iota
-	WS_read_error  = iota
-	WS_write_error = iota
+	wsReadClose  = iota
+	wsReadError  = iota
+	wsWriteError = iota
 )
 
 func wsp(ws *websocket.Conn) string { return fmt.Sprintf("%p", ws) }
@@ -43,10 +46,10 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		httpError(t.Log, w, addr, "Origin header with rendez-vous token required", 400)
 		return
 	}
-	if len(tok) < MIN_TOKEN_LEN {
+	if len(tok) < minTokenLen {
 		httpError(t.Log, w, addr,
 			fmt.Sprintf("Rendez-vous token (%s) is too short (must be %d chars)",
-				tok, MIN_TOKEN_LEN), 400)
+				tok, minTokenLen), 400)
 		return
 	}
 	logTok := cutToken(token(tok))
@@ -157,7 +160,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		req.log.Info("WS   SND", "info", req.info)
 	}
 	// tell the sender to retry the request
-	req.replyChan <- responseBuffer{err: RetryError}
+	req.replyChan <- responseBuffer{err: ErrRetry}
 	req.log.Info("WS error causes retry")
 	// close up shop
 	ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(5*time.Second))
@@ -168,7 +171,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 // Read responses from the tunnel and fulfill pending requests
 func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int) {
 	var err error
-	log_token := cutToken(rs.token)
+	logToken := cutToken(rs.token)
 	// continue reading until we get an error
 	for {
 		ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
@@ -219,7 +222,7 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 	}
 	// print error message
 	if err != nil {
-		rs.log.Info("WS   closing", "token", log_token, "err", err.Error(), "ws", wsp(ws))
+		rs.log.Info("WS   closing", "token", logToken, "err", err.Error(), "ws", wsp(ws))
 	}
 	// close up shop
 	ch <- 0 // notify sender

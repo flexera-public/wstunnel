@@ -28,8 +28,8 @@ import (
 // Our simple proxy server. This server: only handles proxying of HTTPS data via
 // CONNECT protocol, not HTTP. Also we don't bother to modify headers, such as
 // adding X-Forwarded-For as we don't test that.
-var proxyErrorLog string = ""
-var proxyConnCount int = 0
+var proxyErrorLog string
+var proxyConnCount int
 var proxyServer *httptest.Server
 
 func copyAndClose(w, r net.Conn) {
@@ -44,7 +44,7 @@ func copyAndClose(w, r net.Conn) {
 
 func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 	//log.Printf("Proxy server got %#v\n", r)
-	proxyConnCount += 1
+	proxyConnCount++
 	log15.Info("externalProxyServer proxying", "url", r.RequestURI)
 
 	if r.Method != "CONNECT" {
@@ -109,10 +109,10 @@ var _ = Describe("Testing requests", func() {
 	var server *ghttp.Server
 	var wstunsrv *WSTunnelServer
 	var wstuncli *WSTunnelClient
-	var wstunUrl string
+	var wstunURL string
 	var wstunToken string
 	var wstunHost string
-	var proxyUrl *url.URL
+	var proxyURL *url.URL
 
 	BeforeEach(func() {
 		wstunToken = "test567890123456-" + strconv.Itoa(rand.Int()%1000000)
@@ -130,7 +130,7 @@ var _ = Describe("Testing requests", func() {
 	var runTests = func() {
 		// Perform the test by running main() with the command line args set
 		It("Responds to hello requests", func() {
-			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			wstuncli = startClient(wstunToken, wstunHost, proxyURL, server)
 			waitConnected(wstuncli)
 
 			server.AppendHandlers(
@@ -140,7 +140,7 @@ var _ = Describe("Testing requests", func() {
 				),
 			)
 
-			resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + "/hello")
+			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 			Ω(err).ShouldNot(HaveOccurred())
 			respBody, err := ioutil.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
@@ -158,7 +158,7 @@ var _ = Describe("Testing requests", func() {
 				reqBody[i] = byte(i % 256)
 			}
 
-			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			wstuncli = startClient(wstunToken, wstunHost, proxyURL, server)
 			waitConnected(wstuncli)
 
 			server.AppendHandlers(
@@ -170,7 +170,7 @@ var _ = Describe("Testing requests", func() {
 				),
 			)
 
-			resp, err := http.Post(wstunUrl+"/_token/"+wstunToken+"/large-request",
+			resp, err := http.Post(wstunURL+"/_token/"+wstunToken+"/large-request",
 				"text/binary", bytes.NewReader(reqBody))
 			Ω(err).ShouldNot(HaveOccurred())
 			respBody, err := ioutil.ReadAll(resp.Body)
@@ -188,7 +188,7 @@ var _ = Describe("Testing requests", func() {
 				respBody[i] = byte(i % 256)
 			}
 
-			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			wstuncli = startClient(wstunToken, wstunHost, proxyURL, server)
 			waitConnected(wstuncli)
 
 			server.AppendHandlers(
@@ -199,7 +199,7 @@ var _ = Describe("Testing requests", func() {
 				),
 			)
 
-			resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + "/large-response")
+			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/large-response")
 			Ω(err).ShouldNot(HaveOccurred())
 			respRecv, err := ioutil.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
@@ -209,7 +209,7 @@ var _ = Describe("Testing requests", func() {
 		})
 
 		It("Gets error status", func() {
-			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			wstuncli = startClient(wstunToken, wstunHost, proxyURL, server)
 			waitConnected(wstuncli)
 
 			server.AppendHandlers(
@@ -219,7 +219,7 @@ var _ = Describe("Testing requests", func() {
 				),
 			)
 
-			resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + "/hello")
+			resp, err := http.Get(wstunURL + "/_token/" + wstunToken + "/hello")
 			Ω(err).ShouldNot(HaveOccurred())
 			respBody, err := ioutil.ReadAll(resp.Body)
 			Ω(err).ShouldNot(HaveOccurred())
@@ -229,7 +229,7 @@ var _ = Describe("Testing requests", func() {
 		})
 
 		It("Does 100 requests", func() {
-			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			wstuncli = startClient(wstunToken, wstunHost, proxyURL, server)
 			waitConnected(wstuncli)
 
 			const N = 100
@@ -246,7 +246,7 @@ var _ = Describe("Testing requests", func() {
 
 			for i := 0; i < N; i++ {
 				txt := fmt.Sprintf("/hello/%d", i)
-				resp, err := http.Get(wstunUrl + "/_token/" + wstunToken + txt)
+				resp, err := http.Get(wstunURL + "/_token/" + wstunToken + txt)
 				Ω(err).ShouldNot(HaveOccurred())
 				respBody, err := ioutil.ReadAll(resp.Body)
 				Ω(err).ShouldNot(HaveOccurred())
@@ -257,7 +257,7 @@ var _ = Describe("Testing requests", func() {
 		})
 
 		It("Does many requests with random sleeps", func() {
-			wstuncli = startClient(wstunToken, wstunHost, proxyUrl, server)
+			wstuncli = startClient(wstunToken, wstunHost, proxyURL, server)
 			waitConnected(wstuncli)
 
 			const N = 20
@@ -282,7 +282,7 @@ var _ = Describe("Testing requests", func() {
 			for i := 0; i < N; i++ {
 				go func(i int) {
 					txt := fmt.Sprintf("/hello/%d", i)
-					resp[i], err[i] = http.Get(wstunUrl + "/_token/" + wstunToken + txt)
+					resp[i], err[i] = http.Get(wstunURL + "/_token/" + wstunToken + txt)
 					wg.Done()
 				}(i)
 			}
@@ -311,7 +311,7 @@ var _ = Describe("Testing requests", func() {
 			wstunHost = l.Addr().String()
 			wstunsrv = NewWSTunnelServer([]string{})
 			wstunsrv.Start(l)
-			wstunUrl = "http://" + wstunHost
+			wstunURL = "http://" + wstunHost
 
 			log15.Info("Server started")
 		})
@@ -326,12 +326,12 @@ var _ = Describe("Testing requests", func() {
 		Context("with a proxy", func() {
 			BeforeEach(func() {
 				proxyServer = httptest.NewServer(http.HandlerFunc(externalProxyServer))
-				proxyUrl, _ = url.Parse(proxyServer.URL)
+				proxyURL, _ = url.Parse(proxyServer.URL)
 				proxyErrorLog = ""
 				proxyConnCount = 0
 			})
 			AfterEach(func() {
-				proxyUrl = nil
+				proxyURL = nil
 				proxyServer.Close()
 				Ω(proxyErrorLog).Should(Equal(""))
 				Ω(proxyConnCount).Should(Equal(1))
@@ -349,7 +349,7 @@ var _ = Describe("Testing requests", func() {
 			wstunHost = l.Addr().String()
 			wstunsrv = NewWSTunnelServer([]string{})
 			wstunsrv.Start(l)
-			wstunUrl = "http://" + wstunHost
+			wstunURL = "http://" + wstunHost
 
 			log15.Info("Client started")
 

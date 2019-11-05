@@ -24,7 +24,7 @@ var _ = Describe("Testing xhost requests", func() {
 	var server *ghttp.Server
 	var wstuncli *WSTunnelClient
 	var wstunsrv *WSTunnelServer
-	var wstunUrl string
+	var wstunURL string
 	var wstunToken string
 	var cliStart func(server, regexp string) *WSTunnelClient
 
@@ -36,7 +36,7 @@ var _ = Describe("Testing xhost requests", func() {
 		l, _ := net.Listen("tcp", "127.0.0.1:0")
 		wstunsrv = NewWSTunnelServer([]string{})
 		wstunsrv.Start(l)
-		wstunUrl = "http://" + l.Addr().String()
+		wstunURL = "http://" + l.Addr().String()
 		cliStart = func(server, regexp string) *WSTunnelClient {
 			wstuncli = NewWSTunnelClient([]string{
 				"-token", wstunToken, "-tunnel", "ws://" + l.Addr().String(),
@@ -70,7 +70,7 @@ var _ = Describe("Testing xhost requests", func() {
 			),
 		)
 
-		req, err := http.NewRequest("GET", wstunUrl+"/_token/"+wstunToken+"/hello", nil)
+		req, err := http.NewRequest("GET", wstunURL+"/_token/"+wstunToken+"/hello", nil)
 		Ω(err).ShouldNot(HaveOccurred())
 		req.Header.Set("X-Host", server.URL())
 		resp, err := http.DefaultClient.Do(req)
@@ -90,7 +90,7 @@ var _ = Describe("Testing xhost requests", func() {
 			),
 		)
 
-		req, err := http.NewRequest("GET", wstunUrl+"/_token/"+wstunToken+"/hello", nil)
+		req, err := http.NewRequest("GET", wstunURL+"/_token/"+wstunToken+"/hello", nil)
 		Ω(err).ShouldNot(HaveOccurred())
 		req.Header.Set("X-Host", "http://google.com/"+server.URL())
 		resp, err := http.DefaultClient.Do(req)
@@ -110,7 +110,7 @@ var _ = Describe("Testing xhost requests", func() {
 			),
 		)
 
-		req, err := http.NewRequest("GET", wstunUrl+"/_token/"+wstunToken+"/hello", nil)
+		req, err := http.NewRequest("GET", wstunURL+"/_token/"+wstunToken+"/hello", nil)
 		Ω(err).ShouldNot(HaveOccurred())
 		resp, err := http.DefaultClient.Do(req)
 		Ω(err).ShouldNot(HaveOccurred())
