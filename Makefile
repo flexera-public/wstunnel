@@ -30,7 +30,7 @@ EXE:=$(NAME)$(shell go env GOEXE)
 BUCKET=rightscale-binaries
 ACL=public-read
 # dependencies not vendored because used by build & test process
-DEPEND=golang.org/x/tools/cmd/cover github.com/rlmcpherson/s3gof3r/gof3r github.com/onsi/ginkgo/ginkgo
+DEPEND=golang.org/x/tools/cmd/cover github.com/rlmcpherson/s3gof3r/gof3r github.com/onsi/ginkgo/ginkgo github.com/git-chglog/git-chglog/cmd/git-chglog
 HASDEP := $(shell dep version 2> /dev/null)
 
 TRAVIS_BRANCH?=dev
