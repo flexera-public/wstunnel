@@ -32,13 +32,13 @@ there are 4 components running on 3 servers involved:
   http-server app (it acts as a "client" to the http-server)
 The result looks something like this:
 
-````AsciiDoc
+```AsciiDoc
 
 HTTP-client ==>\                      /===> HTTP-server
                 |                      |
                 \----------------------/
             WStunsrv <===tunnel==== WStuncli
-````
+```
 
 But this is not the full picture. Many WStunnel clients can connect to the same server and
 many http-clients can make requests. The rendez-vous between these is made using secret
