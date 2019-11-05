@@ -50,8 +50,8 @@ $(EXE): *.go version
 	go build -o $(EXE) .
 
 # the standard build produces a "local" executable, a linux tgz, and a darwin (macos) tgz
-build: depend $(EXE) build/$(NAME)-linux-amd64.tgz
-# build/$(NAME)-darwin-amd64.tgz build/$(NAME)-linux-arm.tgz build/$(NAME)-windows-amd64.zip
+build: depend $(EXE) build/$(NAME)-linux-amd64.tgz build/$(NAME)-windows-amd64.zip
+# build/$(NAME)-darwin-amd64.tgz build/$(NAME)-linux-arm.tgz 
 
 # create a tgz with the binary and any artifacts that are necessary
 # note the hack to allow for various GOOS & GOARCH combos, sigh
@@ -69,7 +69,10 @@ build/$(NAME)-%.tgz: *.go version depend
 	rm -r build/$(NAME)
 
 build/$(NAME)-%.zip: *.go version depend
-	touch $@
+	mkdir -p build/$(NAME)
+	tgt=$*; GOOS=$${tgt%-*} GOARCH=$${tgt#*-} go build -o build/$(NAME)/$(NAME).exe .
+	zip $@ build/$(NAME)/$(NAME).exe
+	rm -r build/$(NAME)
 
 # upload assumes you have AWS_ACCESS_KEY_ID and AWS_SECRET_KEY env variables set,
 # which happens in the .travis.yml for CI
@@ -77,6 +80,16 @@ upload: depend
 	@which gof3r >/dev/null || (echo 'Please "go get github.com/rlmcpherson/s3gof3r/gof3r"'; false)
 	(cd build; set -ex; \
 	  for f in *.tgz; do \
+	    gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
+	    if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
+	      gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_BRANCH)/$$f <$$f; \
+	      re='^([0-9]+\.[0-9]+)\.[0-9]+$$' ;\
+	      if [[ "$(TRAVIS_BRANCH)" =~ $$re ]]; then \
+	        gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$${BASH_REMATCH[1]}/$$f <$$f; \
+	      fi; \
+	    fi; \
+	  done \
+		for f in *.zip; do \
 	    gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
 	    if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
 	      gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_BRANCH)/$$f <$$f; \
