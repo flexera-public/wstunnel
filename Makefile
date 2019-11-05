@@ -88,7 +88,8 @@ upload: depend
 	        gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$${BASH_REMATCH[1]}/$$f <$$f; \
 	      fi; \
 	    fi; \
-	  done \
+	  done)
+	(cd build; set -ex; \
 		for f in *.zip; do \
 	    gof3r put --no-md5 --acl=$(ACL) -b ${BUCKET} -k rsbin/$(NAME)/$(TRAVIS_COMMIT)/$$f <$$f; \
 	    if [ "$(TRAVIS_PULL_REQUEST)" = "false" ]; then \
