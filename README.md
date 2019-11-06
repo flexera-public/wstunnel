@@ -3,9 +3,9 @@
 - Master:
 [![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=master)](https://travis-ci.org/rightscale/wstunnel)
 [![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_master.svg)](https://gocover.io/github.com/rightscale/wstunnel)
-- 1.0.6:
-[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.6)](https://travis-ci.org/rightscale/wstunnel)
-[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.6.svg)](https://gocover.io/github.com/rightscale/wstunnel)
+- 1.0.7:
+[![Build Status](https://travis-ci.org/rightscale/wstunnel.svg?branch=1.0.7)](https://travis-ci.org/rightscale/wstunnel)
+[![Coverage](https://s3.amazonaws.com/rs-code-coverage/wstunnel/cc_badge_1.0.7.svg)](https://gocover.io/github.com/rightscale/wstunnel)
 
 WStunnel creates an HTTPS tunnel that can connect servers sitting
 behind an HTTP proxy and firewall to clients on the internet. It differs from many other projects
@@ -215,3 +215,24 @@ The first line says that wstunsrv received an HTTP request to be tunneled and as
 The second line says that wstunsrv sent the request onto the appropriate websocket ("WS") to wstuncli.
 The third line says that it has received a response to request 19 over the websocket.
 The fourth line says that wstunsrv sent an HTTP response back to request 19, and that the status is a 401. What may not be obvious is that because it went round-trip to wstuncli the status code comes from wstuncli.
+
+## Release instructions
+
+1. Run the following bash commands.
+
+```bash
+make depend
+git tag -a $VERSION
+git push --tags
+```
+
+1. Create a branch for the changelog.
+1. Create the changelog:
+
+```bash
+git-chglog -o CHANGELOG.md
+git add CHANGELOG.md
+```
+
+1. Update Readme to reflect new `$VERSION`.
+1. Commit and push README and CHANGLOG Changes.
