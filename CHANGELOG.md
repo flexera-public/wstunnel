@@ -1,8 +1,6 @@
 # ChangeLog
 
-## [1.0.7](https://github.com/rightscale/wstunnel/compare/1.0.6...1.0.7)> 2019-11-05
-
-### Add
+## [1.0.7](https://github.com/rightscale/wstunnel/compare/1.0.6...1.0.7)### Add
 
 * Add Support for Wstuncli port range ([#35](https://github.com/rightscale/wstunnel/issues/35))
 * Add support for binding to the specific host ([#23](https://github.com/rightscale/wstunnel/issues/23)) ([#36](https://github.com/rightscale/wstunnel/issues/36))
@@ -54,9 +52,7 @@
 * Merge pull request [#28](https://github.com/rightscale/wstunnel/issues/28) from rightscale/ph-update-dependencies
 * Merge pull request [#25](https://github.com/rightscale/wstunnel/issues/25) from flaccid/patch-1
 
-## [1.0.6](https://github.com/rightscale/wstunnel/compare/1.0.5...1.0.6)> 2019-11-05
-
-### Add
+## [1.0.6](https://github.com/rightscale/wstunnel/compare/1.0.5...1.0.6)### Add
 
 * add tests to large requests and responses
 
@@ -80,9 +76,7 @@
 
 * tweak debug output
 
-## [1.0.5](https://github.com/rightscale/wstunnel/compare/1.0.4...1.0.5)> 2019-11-05
-
-### Added
+## [1.0.5](https://github.com/rightscale/wstunnel/compare/1.0.4...1.0.5)### Added
 
 * added logging to track ws connect/disconnect
 
@@ -108,9 +102,7 @@
 
 * Merge pull request [#16](https://github.com/rightscale/wstunnel/issues/16) from rightscale/IV-2077_proxy
 
-## [1.0.4](https://github.com/rightscale/wstunnel/compare/1.0.3...1.0.4)> 2019-11-05
-
-### Attempt
+## [1.0.4](https://github.com/rightscale/wstunnel/compare/1.0.3...1.0.4)### Attempt
 
 * attempt to test websocket reconnection
 
@@ -122,15 +114,11 @@
 
 * update readme
 
-## [1.0.3](https://github.com/rightscale/wstunnel/compare/1.0.2...1.0.3)> 2019-11-05
-
-### Fix
+## [1.0.3](https://github.com/rightscale/wstunnel/compare/1.0.2...1.0.3)### Fix
 
 * fix non-remove requests on tunnel abort; fix non-reopening of WS at client
 
-## [1.0.2](https://github.com/rightscale/wstunnel/compare/1.0.1...1.0.2)> 2019-11-05
-
-### Added
+## [1.0.2](https://github.com/rightscale/wstunnel/compare/1.0.1...1.0.2)### Added
 
 * added statusfile option
 
@@ -142,9 +130,7 @@
 
 * tweak readme
 
-## [1.0.1](https://github.com/rightscale/wstunnel/compare/1.0.0...1.0.1)> 2019-11-05
-
-### Add
+## [1.0.1](https://github.com/rightscale/wstunnel/compare/1.0.0...1.0.1)### Add
 
 * add more debug info to x-host match failure
 
@@ -175,9 +161,7 @@
 
 * updated readme
 
-## 1.0.0> 2019-11-05
-
-### Acu152721
+## 1.0.0### Acu152721
 
 * acu152721 use exec su, since setuid is forced on pre-start
 * acu152721 Have upstart use the www-data user
@@ -338,3 +322,4 @@
 * Merge pull request [#12](https://github.com/rightscale/wstunnel/issues/12) from rightscale/multihost
 * Merge pull request [#4](https://github.com/rightscale/wstunnel/issues/4) from rightscale/acu153476_use_syslog
 * Merge pull request [#2](https://github.com/rightscale/wstunnel/issues/2) from rightscale/acu152721_run_as_www_data_user
+
