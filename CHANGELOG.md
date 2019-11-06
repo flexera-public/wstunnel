@@ -1,6 +1,5 @@
 # ChangeLog
 
-
 ## [1.0.7](https://github.com/rightscale/wstunnel/compare/1.0.6...1.0.7)> 2019-11-05
 
 ### Add
@@ -55,7 +54,6 @@
 * Merge pull request [#28](https://github.com/rightscale/wstunnel/issues/28) from rightscale/ph-update-dependencies
 * Merge pull request [#25](https://github.com/rightscale/wstunnel/issues/25) from flaccid/patch-1
 
-
 ## [1.0.6](https://github.com/rightscale/wstunnel/compare/1.0.5...1.0.6)> 2019-11-05
 
 ### Add
@@ -81,7 +79,6 @@
 ### Tweak
 
 * tweak debug output
-
 
 ## [1.0.5](https://github.com/rightscale/wstunnel/compare/1.0.4...1.0.5)> 2019-11-05
 
@@ -111,7 +108,6 @@
 
 * Merge pull request [#16](https://github.com/rightscale/wstunnel/issues/16) from rightscale/IV-2077_proxy
 
-
 ## [1.0.4](https://github.com/rightscale/wstunnel/compare/1.0.3...1.0.4)> 2019-11-05
 
 ### Attempt
@@ -126,13 +122,11 @@
 
 * update readme
 
-
 ## [1.0.3](https://github.com/rightscale/wstunnel/compare/1.0.2...1.0.3)> 2019-11-05
 
 ### Fix
 
 * fix non-remove requests on tunnel abort; fix non-reopening of WS at client
-
 
 ## [1.0.2](https://github.com/rightscale/wstunnel/compare/1.0.1...1.0.2)> 2019-11-05
 
@@ -147,7 +141,6 @@
 ### Tweak
 
 * tweak readme
-
 
 ## [1.0.1](https://github.com/rightscale/wstunnel/compare/1.0.0...1.0.1)> 2019-11-05
 
@@ -181,7 +174,6 @@
 ### Updated
 
 * updated readme
-
 
 ## 1.0.0> 2019-11-05
 
