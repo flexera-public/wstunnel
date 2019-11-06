@@ -1,10 +1,4 @@
 
-<a name="1.0.8"></a>
-## [1.0.8](https://github.com/rightscale/wstunnel/compare/1.0.7...1.0.8)
-
-> 2019-11-05
-
-
 <a name="1.0.7"></a>
 ## [1.0.7](https://github.com/rightscale/wstunnel/compare/1.0.6...1.0.7)
 
