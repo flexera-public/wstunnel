@@ -1,7 +1,7 @@
 # ChangeLog
 
 {{ range .Versions -}}
-## {{ if .Tag.Previous }}[{{ .Tag.Name -}}]({{ $.Info.RepositoryURL }}/compare/{{ .Tag.Previous.Name }}...{{ .Tag.Name -}}){{ else }}{{ .Tag.Name -}}{{ end -}}
+## {{ if .Tag.Previous }}[{{ .Tag.Name -}}]({{ $.Info.RepositoryURL }}/compare/{{ .Tag.Previous.Name }}...{{ .Tag.Name }}){{ else }}{{ .Tag.Name }}{{ end }}
 
 {{ range .CommitGroups -}}
 ### {{ .Title }}
