@@ -338,4 +338,3 @@
 * Merge pull request [#12](https://github.com/rightscale/wstunnel/issues/12) from rightscale/multihost
 * Merge pull request [#4](https://github.com/rightscale/wstunnel/issues/4) from rightscale/acu153476_use_syslog
 * Merge pull request [#2](https://github.com/rightscale/wstunnel/issues/2) from rightscale/acu152721_run_as_www_data_user
-
