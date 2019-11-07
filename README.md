@@ -218,7 +218,7 @@ The fourth line says that wstunsrv sent an HTTP response back to request 19, and
 
 ## Release instructions
 
-1. Run the following bash commands.
+- Run the following bash commands.
 
 ```bash
 make depend
@@ -226,13 +226,13 @@ git tag -a $VERSION
 git push --tags
 ```
 
-1. Create a branch for the changelog.
-1. Create the changelog:
+- Create a branch for the changelog.
+- Create the changelog:
 
 ```bash
 git-chglog -o CHANGELOG.md
 git add CHANGELOG.md
 ```
 
-1. Update Readme to reflect new `$VERSION`.
-1. Commit and push README and CHANGLOG Changes.
+- Update Readme to reflect new `$VERSION`.
+- Commit and push README and CHANGLOG Changes.
