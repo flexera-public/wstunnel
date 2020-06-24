@@ -10,7 +10,7 @@
   sudo cp wstunnel/init/wstuncli.default /etc/default/wstuncli
   # Update /etc/default/wstuncli with your settings
   sudo cp wstunnel/init/wstuncli.init /etc/init.d/wstuncli
-  chmod +x /etc/init.d/wstuncli
-  update-rc.d wstuncli defaults
-  service wstuncli start
+  sudo chmod +x /etc/init.d/wstuncli
+  sudo update-rc.d wstuncli defaults
+  sudo service wstuncli start
 ```
