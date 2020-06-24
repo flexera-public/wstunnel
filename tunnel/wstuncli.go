@@ -111,7 +111,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var proxy = cliFlag.String("proxy", "",
 		"use HTTPS proxy http://user:pass@hostname:port")
 	var cliports = cliFlag.String("client-ports", "",
-		"comma separated list of client listening ports ex: --client-ports 8000..8100,8300..8400,8500,8505")
+		"comma separated list of client listening ports ex: -client-ports 8000..8100,8300..8400,8500,8505")
 
 	cliFlag.Parse(args)
 
