@@ -1,0 +1,45 @@
+#! /bin/sh
+#
+### BEGIN INIT INFO
+# Required-Start:    $local_fs $remote_fs
+# Required-Stop:     $local_fs $remote_fs
+# Provides:          wstuncli
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 6
+# Short-Description: runs wstunnel client
+# Description:       runs wstunnel client
+#                    and wait for them to finish
+### END INIT INFO
+set -e
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+NAME="wstuncli"
+DESC="wstunnel client"
+SCRIPTNAME="/etc/init.d/$NAME"
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.2-14) to ensure that this file is present
+. /lib/lsb/init-functions
+. /etc/default/wstuncli
+
+DAEMON=/usr/local/bin/wstunnel
+PIDFILE=/var/run/wstunnel
+
+case "$1" in
+start|restart|force-reload|status)
+        start-stop-daemon --start --quiet --background --make-pidfile --pidfile $PIDFILE --exec $DAEMON -- cli -token $TOKEN -tunnel $TUNNEL -server $SERVER -logfile /var/log/wstuncli.log
+        ;;
+stop)
+       start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME
+        RETVAL="$?"
+        [ "$RETVAL" = 2 ] && return 2
+        ;;
+*)
+        echo "Usage: $SCRIPTNAME {start|stop|status|restart|force-reload}" >&2
+        exit 3
+        ;;
+esac
