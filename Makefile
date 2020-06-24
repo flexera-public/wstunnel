@@ -112,11 +112,7 @@ version:
 # Travis doing this. The folllowing just relies on go get no reinstalling when it's already
 # there, like your laptop.
 depend:
-ifndef HASDEP
-	curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-endif
 	go get $(DEPEND)
-	dep ensure
 
 clean:
 	@echo "package main; const VV = \"$(NAME) unversioned - $(DATE)\"" >version.go
