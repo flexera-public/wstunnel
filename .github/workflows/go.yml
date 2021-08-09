@@ -25,5 +25,5 @@ jobs:
       run: go mod tidy
 
     - name: Test
-      run: go test -v ./...
+      run: make test
 
