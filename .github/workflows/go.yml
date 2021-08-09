@@ -21,6 +21,8 @@ jobs:
       run: make depend
     - name: Build
       run: make build
+    - name: Tidy
+      run: go mod tidy
 
     - name: Test
       run: go test -v ./...
