@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"html"
 
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
@@ -22,7 +23,7 @@ var _ fmt.Formatter
 
 func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code int) {
 	log.Info("ERR", "token", token, "status", code, "err", err)
-	http.Error(w, err, code)
+	http.Error(w, html.EscapeString(err), code)
 }
 
 //websocket error constants
