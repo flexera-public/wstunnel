@@ -311,10 +311,14 @@ func (t *WSTunnelClient) Start() error {
 				t.Connected = false
 			}
 			// check whether we need to exit
+			exitLoop := false
 			select {
 			case <-t.exitChan:
-				break
+				exitLoop = true
 			default: // non-blocking receive
+			}
+			if exitLoop {
+				break
 			}
 
 			<-timer.C // ensure we don't open connections too rapidly
@@ -327,6 +331,9 @@ func (t *WSTunnelClient) Start() error {
 //Stop closes the wstunnel channel
 func (t *WSTunnelClient) Stop() {
 	t.exitChan <- struct{}{}
+	if t.conn != nil && t.conn.ws != nil {
+		t.conn.ws.Close()
+	}
 }
 
 // Main function to handle WS requests: it reads a request from the socket, then forks
