@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"html"
 
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
 	_ "net/http/pprof"
