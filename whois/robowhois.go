@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -33,8 +34,10 @@ var netNameRe = regexp.MustCompile("network:Organization[^a-zA-Z]*([ -~]*)")
 
 //Whois determines ip information from robowhois
 func Whois(ipAddr, apiToken string) string {
+	result := ""
 	if net.ParseIP(ipAddr) == nil {
 		fmt.Printf("IP Address: %s - Invalid\n", ipAddr)
+		result = ""
 	} else {
 		fmt.Printf("IP Address: %s - Valid\n", ipAddr)
 		validIpAddr := net.ParseIP(ipAddr).String()
@@ -42,23 +45,23 @@ func Whois(ipAddr, apiToken string) string {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			log.Printf("robowhois: error building URL for query for %s", validIpAddr)
-			return ""
+			result = ""
 		}
 		req.SetBasicAuth(apiToken, "X")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			log.Printf("robowhois: query for %s failed: %s", validIpAddr, err)
-			return ""
+			result = ""
 		}
 		if resp.StatusCode != 200 {
 			log.Printf("robowhois: query for %s returned error: %s", validIpAddr, resp.Status)
-			return ""
+			result = ""
 		}
 		var data Data
 		err = json.NewDecoder(resp.Body).Decode(&data)
 		if err != nil {
 			log.Printf("robowhois: can't decode response for %s: %s", validIpAddr, err)
-			return ""
+			result = ""
 		}
 		n := len(data.Response.Parts)
 		//log.Printf("robowhois: %s -> %s", ipAddr, data.Response.Parts[n-1].Body)
@@ -69,12 +72,12 @@ func Whois(ipAddr, apiToken string) string {
 		}
 		if match == nil {
 			log.Printf("robowhois: can't find OrgName in response for %s", validIpAddr)
-			return ""
+			result = ""
 		}
-		result := match[len(match)-1][1]
+		result = match[len(match)-1][1]
 		log.Printf("robowhois: %s -> %s", validIpAddr, result)
-		return result
 	}
+	return result
 }
 
 func testMain() {
