@@ -236,12 +236,12 @@ func (t *WSTunnelClient) Start() error {
 		return fmt.Errorf("Must specify rendez-vous token using -token option")
 	}
 
+	tlsClientConfig := tls.Config{}
 	if t.Insecure {
 		t.Log.Info("Accepting unverified SSL certs from local HTTPS servers")
+		tlsClientConfig.InsecureSkipVerify = true
 		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
+			TLSClientConfig: &tlsClientConfig,
 		}
 		httpClient = http.Client{Transport: tr}
 	}
@@ -275,6 +275,7 @@ func (t *WSTunnelClient) Start() error {
 				NetDial:         t.wsProxyDialer,
 				ReadBufferSize:  100 * 1024,
 				WriteBufferSize: 100 * 1024,
+				TLSClientConfig: &tlsClientConfig,
 			}
 			h := make(http.Header)
 			h.Add("Origin", t.Token)
