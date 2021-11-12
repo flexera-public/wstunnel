@@ -91,7 +91,7 @@ func externalProxyServer(w http.ResponseWriter, r *http.Request) {
 }
 
 var startClient = func(wstunToken string, wstunHost string, proxy *url.URL, server *ghttp.Server) *WSTunnelClient {
-	tunnel, _:= url.Parse("ws://" + wstunHost)
+	tunnel, _ := url.Parse("ws://" + wstunHost)
 	wstuncli := &WSTunnelClient{
 		Token:          wstunToken,
 		Tunnel:         tunnel,
