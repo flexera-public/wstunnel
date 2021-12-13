@@ -62,7 +62,7 @@ var _ fmt.Formatter
 // websockets that are not fully closed yet running at any point in time
 type WSTunnelClient struct {
 	Token          string         // Rendez-vous token
-	Tunnel         string         // websocket server to connect to (ws[s]://hostname:port)
+	Tunnel         *url.URL       // websocket server to connect to (ws[s]://hostname:port)
 	Server         string         // local HTTP(S) server to send received requests to (default server)
 	InternalServer http.Handler   // internal Server to dispatch HTTP requests to
 	Regexp         *regexp.Regexp // regexp for allowed local HTTP(S) servers
@@ -96,8 +96,8 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 	var cliFlag = flag.NewFlagSet("client", flag.ExitOnError)
 	cliFlag.StringVar(&wstunCli.Token, "token", "",
 		"rendez-vous token identifying this server")
-	cliFlag.StringVar(&wstunCli.Tunnel, "tunnel", "",
-		"websocket server ws[s]://hostname:port to connect to")
+	var tunnel = cliFlag.String("tunnel", "",
+		"websocket server ws[s]://user:pass@hostname:port to connect to")
 	cliFlag.StringVar(&wstunCli.Server, "server", "",
 		"http server http[s]://hostname:port to send received requests to")
 	cliFlag.BoolVar(&wstunCli.Insecure, "insecure", false,
@@ -137,6 +137,24 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 			log15.Crit("Can't parse -regexp", "err", err.Error())
 			os.Exit(1)
 		}
+	}
+
+	if *tunnel != "" {
+		tunnelUrl, err := url.Parse(*tunnel)
+		if err != nil {
+			log15.Crit(fmt.Sprintf("Invalid tunnel address: %q, %v", *tunnel, err))
+			os.Exit(1)
+		}
+
+		if tunnelUrl.Scheme != "ws" && tunnelUrl.Scheme != "wss" {
+			log15.Crit(fmt.Sprintf("Remote tunnel (-tunnel option) must begin with ws:// or wss://"))
+			os.Exit(1)
+		}
+
+		wstunCli.Tunnel = tunnelUrl
+	} else {
+		log15.Crit(fmt.Sprintf("Must specify tunnel server ws://hostname:port using -tunnel option"))
+		os.Exit(1)
 	}
 
 	// process -proxy or look for standard unix env variables
@@ -212,15 +230,6 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 func (t *WSTunnelClient) Start() error {
 	t.Log.Info(VV)
 
-	// validate -tunnel
-	if t.Tunnel == "" {
-		return fmt.Errorf("Must specify tunnel server ws://hostname:port using -tunnel option")
-	}
-	if !strings.HasPrefix(t.Tunnel, "ws://") && !strings.HasPrefix(t.Tunnel, "wss://") {
-		return fmt.Errorf("Remote tunnel (-tunnel option) must begin with ws:// or wss://")
-	}
-	t.Tunnel = strings.TrimSuffix(t.Tunnel, "/")
-
 	// validate -server
 	if t.InternalServer != nil {
 		t.Server = ""
@@ -279,7 +288,10 @@ func (t *WSTunnelClient) Start() error {
 			}
 			h := make(http.Header)
 			h.Add("Origin", t.Token)
-			url := fmt.Sprintf("%s/_tunnel", t.Tunnel)
+			if auth := proxyAuth(t.Tunnel); auth != "" {
+				h.Add("Authorization", auth)
+			}
+			url := fmt.Sprintf("%s://%s/_tunnel", t.Tunnel.Scheme, t.Tunnel.Host)
 			timer := time.NewTimer(10 * time.Second)
 			t.Log.Info("WS   Opening", "url", url, "token", t.Token[0:5]+"...")
 			ws, resp, err := d.Dial(url, h)
