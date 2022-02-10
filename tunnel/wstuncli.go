@@ -27,6 +27,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"os"
 	"regexp"
 	"runtime"
@@ -67,6 +68,7 @@ type WSTunnelClient struct {
 	InternalServer http.Handler   // internal Server to dispatch HTTP requests to
 	Regexp         *regexp.Regexp // regexp for allowed local HTTP(S) servers
 	Insecure       bool           // accept self-signed SSL certs from local HTTPS servers
+	Cert           string         // accept provided certificate from local HTTPS servers
 	Timeout        time.Duration  // timeout on websocket
 	Proxy          *url.URL       // if non-nil, external proxy to use
 	Log            log15.Logger   // logger with "pkg=WStuncli"
@@ -112,6 +114,7 @@ func NewWSTunnelClient(args []string) *WSTunnelClient {
 		"use HTTPS proxy http://user:pass@hostname:port")
 	var cliports = cliFlag.String("client-ports", "",
 		"comma separated list of client listening ports ex: -client-ports 8000..8100,8300..8400,8500,8505")
+	cliFlag.StringVar(&wstunCli.Cert, "certfile", "", "path for trusted certificate in PEM-encoded format")
 
 	cliFlag.Parse(args)
 
@@ -248,11 +251,30 @@ func (t *WSTunnelClient) Start() error {
 	tlsClientConfig := tls.Config{}
 	if t.Insecure {
 		t.Log.Info("Accepting unverified SSL certs from local HTTPS servers")
-		tlsClientConfig.InsecureSkipVerify = true
-		tr := &http.Transport{
-			TLSClientConfig: &tlsClientConfig,
+		tlsClientConfig.InsecureSkipVerify = t.Insecure
+	}
+	if t.Cert != "" {
+		// Get the SystemCertPool, continue with an empty pool on error
+		rootCAs, _ := x509.SystemCertPool()
+		if rootCAs == nil {
+			rootCAs = x509.NewCertPool()
 		}
-		httpClient = http.Client{Transport: tr}
+		// Read in the cert file
+		certs, err := ioutil.ReadFile(t.Cert)
+		if err != nil {
+			return fmt.Errorf("Failed to read certificate file %q: %v", t.Cert, err)
+		}
+		// Append our cert to the system pool
+		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+			return fmt.Errorf("Failed to appended certificate file %q to pool: %v", t.Cert, err)
+		}
+		t.Log.Info("Explicitly accepting provided SSL certificate")
+		tlsClientConfig.RootCAs = rootCAs
+	}
+	httpClient = http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tlsClientConfig,
+		},
 	}
 
 	if t.InternalServer != nil {
