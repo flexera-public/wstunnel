@@ -83,7 +83,7 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	// Spawn goroutine to read responses
 	go wsReader(rs, ws, t.WSTimeout, ch, &rs.readWG)
 	// Send requests
-	wsWriter(rs, ws, ch)
+	wsWriter(rs, ws, t.WSTimeout, ch)
 }
 
 func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
@@ -108,7 +108,7 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 }
 
 // Pick requests off the RemoteServer queue and send them into the tunnel
-func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
+func wsWriter(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int) {
 	var req *remoteRequest
 	var err error
 	for {
@@ -133,7 +133,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			continue
 		}
 		// write the request into the tunnel
-		ws.SetWriteDeadline(time.Now().Add(time.Minute))
+		ws.SetWriteDeadline(time.Now().Add(wsTimeout))
 		var w io.WriteCloser
 		w, err = ws.NextWriter(websocket.BinaryMessage)
 		// got an error, reply with a "hey, retry" to the request handler
