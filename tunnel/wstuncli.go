@@ -758,7 +758,7 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	wsWriterMutex.Lock()
 	defer wsWriterMutex.Unlock()
 	// Write response into the tunnel
-	wsc.ws.SetWriteDeadline(time.Now().Add(time.Minute))
+	wsc.ws.SetWriteDeadline(time.Now().Add(wsc.tun.Timeout))
 	w, err := wsc.ws.NextWriter(websocket.BinaryMessage)
 	// got an error, reply with a "hey, retry" to the request handler
 	if err != nil {
