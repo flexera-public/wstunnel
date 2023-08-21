@@ -373,7 +373,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	case resp := <-req.replyChan:
 		// if there's no error just respond
 		if resp.err == nil {
-			code := writeResponse(t, rs, w, resp.response)
+			code := writeResponse(rs, w, resp.response)
 			req.log.Info("HTTP RET", "status", code)
 			return
 		}
@@ -499,7 +499,7 @@ var censoredHeaders = []string{
 }
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func writeResponse(t *WSTunnelServer, rs *remoteServer, w http.ResponseWriter, r io.Reader) int {
+func writeResponse(rs *remoteServer, w http.ResponseWriter, r io.Reader) int {
 	defer rs.readWG.Done()
 	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
