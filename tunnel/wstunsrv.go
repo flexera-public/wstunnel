@@ -51,7 +51,7 @@ type token string
 
 type responseBuffer struct {
 	err      error
-	response *bytes.Buffer
+	response io.Reader
 }
 
 // A request for a remote server
@@ -77,6 +77,7 @@ type remoteServer struct {
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             log15.Logger
+	readWG          sync.WaitGroup
 }
 
 //WSTunnelServer a wstunnel server construct
@@ -372,7 +373,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	case resp := <-req.replyChan:
 		// if there's no error just respond
 		if resp.err == nil {
-			code := writeResponse(w, resp.response)
+			code := writeResponse(rs, w, resp.response)
 			req.log.Info("HTTP RET", "status", code)
 			return
 		}
@@ -498,8 +499,9 @@ var censoredHeaders = []string{
 }
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func writeResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
-	resp, err := http.ReadResponse(bufio.NewReader(buf), nil)
+func writeResponse(rs *remoteServer, w http.ResponseWriter, r io.Reader) int {
+	defer rs.readWG.Done()
+	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
 		log15.Info("WriteResponse: can't parse incoming response", "err", err)
 		w.WriteHeader(506)
@@ -512,6 +514,7 @@ func writeResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+	resp.Body.Close()
 	return resp.StatusCode
 }
 
