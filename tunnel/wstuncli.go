@@ -364,8 +364,6 @@ func (wsc *WSConnection) handleRequests() {
 			wsc.Log.Warn("WS   invalid message type", "type", typ)
 			break
 		}
-		// give the sender a minute to produce the request
-		wsc.ws.SetReadDeadline(time.Now().Add(time.Minute))
 		// read request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
@@ -758,7 +756,7 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	wsWriterMutex.Lock()
 	defer wsWriterMutex.Unlock()
 	// Write response into the tunnel
-	wsc.ws.SetWriteDeadline(time.Now().Add(time.Minute))
+	wsc.ws.SetWriteDeadline(time.Time{}) // separate ping-pong routine does timeout
 	w, err := wsc.ws.NextWriter(websocket.BinaryMessage)
 	// got an error, reply with a "hey, retry" to the request handler
 	if err != nil {

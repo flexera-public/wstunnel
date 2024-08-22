@@ -51,7 +51,7 @@ type token string
 
 type responseBuffer struct {
 	err      error
-	response *bytes.Buffer
+	response io.Reader
 }
 
 // A request for a remote server
@@ -77,6 +77,8 @@ type remoteServer struct {
 	requestSet      map[int16]*remoteRequest // all requests in queue/flight indexed by ID
 	requestSetMutex sync.Mutex
 	log             log15.Logger
+	readMutex       sync.Mutex               // ensure that no more than one goroutine calls the websocket read methods concurrently
+	readCond        *sync.Cond               // (NextReader, SetReadDeadline, SetPingHandler, ...)
 }
 
 //WSTunnelServer a wstunnel server construct
@@ -349,8 +351,14 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 
 	// Ensure we retire the request when we pop out of this function
+	// and signal the tunnel reader to continue
 	defer func() {
 		rs.RetireRequest(req)
+		if !retry {
+			rs.readCond.L.Lock() // make sure the reader is in Wait()
+			rs.readCond.Signal()
+			rs.readCond.L.Unlock()
+		}
 	}()
 
 	// enqueue request
@@ -367,6 +375,7 @@ func getResponse(t *WSTunnelServer, req *remoteRequest, w http.ResponseWriter, r
 	}
 	req.log.Info("HTTP RCV", "verb", r.Method, "url", r.URL,
 		"addr", req.remoteAddr, "x-host", r.Header.Get("X-Host"), "try", try)
+
 	// wait for response
 	select {
 	case resp := <-req.replyChan:
@@ -426,6 +435,7 @@ func (t *WSTunnelServer) getRemoteServer(tok token, create bool) *remoteServer {
 		requestSet:   make(map[int16]*remoteRequest),
 		log:          log15.New("token", cutToken(tok)),
 	}
+	rs.readCond = sync.NewCond(&rs.readMutex)
 	t.serverRegistry[tok] = rs
 	return rs
 }
@@ -498,8 +508,8 @@ var censoredHeaders = []string{
 }
 
 // Write an HTTP response from a byte buffer into a ResponseWriter
-func writeResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
-	resp, err := http.ReadResponse(bufio.NewReader(buf), nil)
+func writeResponse(w http.ResponseWriter, r io.Reader) int {
+	resp, err := http.ReadResponse(bufio.NewReader(r), nil)
 	if err != nil {
 		log15.Info("WriteResponse: can't parse incoming response", "err", err)
 		w.WriteHeader(506)
@@ -512,6 +522,7 @@ func writeResponse(w http.ResponseWriter, buf *bytes.Buffer) int {
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+	resp.Body.Close()
 	return resp.StatusCode
 }
 

@@ -13,3 +13,5 @@ require (
 	golang.org/x/sys v0.0.0-20210806184541-e5e7981a1069 // indirect
 	gopkg.in/inconshreveable/log15.v2 v2.0.0-20200109203555-b30bc20e4fd1
 )
+
+replace github.com/imdario/mergo => dario.cat/mergo latest

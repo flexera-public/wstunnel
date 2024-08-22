@@ -3,12 +3,10 @@
 package tunnel
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"html"
 	"io"
-	"io/ioutil"
 	"net/http"
 
 	// imported per documentation - https://golang.org/pkg/net/http/pprof/
@@ -26,7 +24,7 @@ func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code 
 	http.Error(w, html.EscapeString(err), code)
 }
 
-//websocket error constants
+// websocket error constants
 const (
 	wsReadClose  = iota
 	wsReadError  = iota
@@ -77,14 +75,12 @@ func wsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 	go func() {
 		rs.remoteName, rs.remoteWhois = ipAddrLookup(t.Log, rs.remoteAddr)
 	}()
-	// Set safety limits
-	ws.SetReadLimit(100 * 1024 * 1024)
 	// Start timeout handling
 	wsSetPingHandler(t, ws, rs)
 	// Create synchronization channel
 	ch := make(chan int, 2)
 	// Spawn goroutine to read responses
-	go wsReader(rs, ws, t.WSTimeout, ch)
+	go wsReader(rs, ws, ch)
 	// Send requests
 	wsWriter(rs, ws, ch)
 }
@@ -136,7 +132,7 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 			continue
 		}
 		// write the request into the tunnel
-		ws.SetWriteDeadline(time.Now().Add(time.Minute))
+		ws.SetWriteDeadline(time.Time{}) // no timeout, there's the ping-pong for that
 		var w io.WriteCloser
 		w, err = ws.NextWriter(websocket.BinaryMessage)
 		// got an error, reply with a "hey, retry" to the request handler
@@ -170,9 +166,17 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 }
 
 // Read responses from the tunnel and fulfill pending requests
-func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch chan int) {
+func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 	var err error
 	logToken := cutToken(rs.token)
+
+	// the mutex remains locked unless we are within Cond.Wait()
+	rs.readCond.L.Lock()
+	defer func() {
+		rs.readCond.L.Unlock()
+		rs.readCond.Signal()
+	}()
+
 	// continue reading until we get an error
 	for {
 		ws.SetReadDeadline(time.Time{}) // no timeout, there's the ping-pong for that
@@ -187,21 +191,12 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 			err = fmt.Errorf("non-binary message received, type=%d", t)
 			break
 		}
-		// give the sender a fixed time to get us the data
-		ws.SetReadDeadline(time.Now().Add(wsTimeout))
 		// get request id
 		var id int16
 		_, err = fmt.Fscanf(io.LimitReader(r, 4), "%04x", &id)
 		if err != nil {
 			break
 		}
-		// read request itself, the size is limited by the SetReadLimit on the websocket
-		var buf []byte
-		buf, err = ioutil.ReadAll(r)
-		if err != nil {
-			break
-		}
-		rs.log.Info("WS   RCV", "id", id, "ws", wsp(ws), "len", len(buf))
 		// try to match request
 		rs.requestSetMutex.Lock()
 		req := rs.requestSet[id]
@@ -209,11 +204,12 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, wsTimeout time.Duration, ch 
 		rs.requestSetMutex.Unlock()
 		// let's see...
 		if req != nil {
-			rb := responseBuffer{response: bytes.NewBuffer(buf)}
+			rb := responseBuffer{response: r}
 			// try to enqueue response
 			select {
 			case req.replyChan <- rb:
-				// great!
+				rs.log.Info("WS   RCV enqueued response", "id", id, "ws", wsp(ws))
+				rs.readCond.Wait() // wait for response to be sent
 			default:
 				rs.log.Info("WS   RCV can't enqueue response", "id", id, "ws", wsp(ws))
 			}
