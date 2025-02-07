@@ -73,7 +73,7 @@ release:
   header: |
     See [CHANGELOG.md](CHANGELOG.md) for all changes.
   footer: |
-    **Full Changelog**: https://github.com/owner/repo/blob/main/CHANGELOG.md
+    **Full Changelog**: https://github.com/rshade/wstunnel/blob/main/CHANGELOG.md
 
 snapshot:
   name_template: "{{ incpatch .Version }}-next"

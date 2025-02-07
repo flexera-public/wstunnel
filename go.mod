@@ -1,4 +1,4 @@
-module github.com/mapero/wstunnel
+module github.com/rshade/wstunnel
 
 go 1.23
 
