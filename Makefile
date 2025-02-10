@@ -112,7 +112,7 @@ version:
 # Travis doing this. The folllowing just relies on go get no reinstalling when it's already
 # there, like your laptop.
 depend:
-	go get -u $(DEPEND)
+	go mod download
 
 clean:
 	@echo "package main; const VV = \"$(NAME) unversioned - $(DATE)\"" >version.go
