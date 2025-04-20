@@ -54,8 +54,6 @@ import (
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
-var _ fmt.Formatter
-
 // WSTunnelClient represents a persistent tunnel that can cycle through many websockets. The
 // fields in this struct are relatively static/constant. The conn field points to the latest
 // websocket, but it's important to realize that there may be goroutines handling older
@@ -333,7 +331,9 @@ func (t *WSTunnelClient) Start() error {
 					if len(buf) > 0 {
 						extra = extra + " -- " + string(buf[:n])
 					}
-					resp.Body.Close()
+					if err := resp.Body.Close(); err != nil {
+						t.Log.Error("Failed to close response body", "err", err)
+					}
 				}
 				t.Log.Error("Error opening connection",
 					"err", err.Error(), "info", extra)
@@ -374,7 +374,9 @@ func (t *WSTunnelClient) Start() error {
 func (t *WSTunnelClient) Stop() {
 	t.exitChan <- struct{}{}
 	if t.conn != nil && t.conn.ws != nil {
-		t.conn.ws.Close()
+		if err := t.conn.ws.Close(); err != nil {
+			t.Log.Error("Failed to close websocket", "err", err)
+		}
 	}
 }
 
@@ -433,7 +435,9 @@ func (wsc *WSConnection) handleRequests() {
 	// delay a few seconds to allow for writes to drain and then force-close the socket
 	go func() {
 		time.Sleep(5 * time.Second)
-		wsc.ws.Close()
+		if err := wsc.ws.Close(); err != nil {
+			wsc.Log.Error("Failed to close websocket", "err", err)
+		}
 	}()
 }
 
@@ -463,7 +467,9 @@ func (wsc *WSConnection) pinger() {
 		wsc.Log.Info("ping timeout, closing WS")
 		time.Sleep(5 * time.Second)
 		if wsc.ws != nil {
-			wsc.ws.Close()
+			if err := wsc.ws.Close(); err != nil {
+				wsc.Log.Error("Failed to close websocket", "err", err)
+			}
 		}
 	}
 	// timeout timer
@@ -487,22 +493,25 @@ func (wsc *WSConnection) pinger() {
 	}
 	wsc.ws.SetPongHandler(ph)
 	// ping loop, ends when socket is closed...
-	for {
-		if wsc.ws == nil {
-			break
-		}
+	for wsc.ws != nil {
 		if err := wsc.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(tunTimeout/3)); err != nil {
 			break
 		}
 		time.Sleep(tunTimeout / 3)
 	}
 	wsc.Log.Info("pinger ending (WS errored or closed)")
-	wsc.ws.Close()
+	if err := wsc.ws.Close(); err != nil {
+		wsc.Log.Error("Failed to close websocket", "err", err)
+	}
 }
 
 func (wsc *WSConnection) writeStatus() {
-	fmt.Fprintf(wsc.tun.StatusFd, "Unix: %d\n", time.Now().Unix())
-	fmt.Fprintf(wsc.tun.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339))
+	if _, err := fmt.Fprintf(wsc.tun.StatusFd, "Unix: %d\n", time.Now().Unix()); err != nil {
+		wsc.Log.Error("Failed to write to status file", "err", err)
+	}
+	if _, err := fmt.Fprintf(wsc.tun.StatusFd, "Time: %s\n", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		wsc.Log.Error("Failed to write to status file", "err", err)
+	}
 }
 
 func (t *WSTunnelClient) wsDialerLocalPort(network string, addr string, ports []int) (conn net.Conn, err error) {
@@ -574,7 +583,9 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, connectReq)
 	if err != nil {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			t.Log.Error("Failed to close connection", "err", err)
+		}
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
@@ -582,7 +593,9 @@ func (t *WSTunnelClient) wsProxyDialer(network string, addr string) (conn net.Co
 		//resp.Body.Close()
 		//return nil, errors.New("proxy refused connection" + string(body))
 		f := strings.SplitN(resp.Status, " ", 2)
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			t.Log.Error("Failed to close connection", "err", err)
+		}
 		return nil, fmt.Errorf("%s", f[1])
 	}
 	return conn, nil
@@ -692,7 +705,7 @@ func (wsc *WSConnection) finishInternalRequest(id int16, req *http.Request) {
 
 	// Dump the request into a buffer in case we want to log it
 	dump, _ := httputil.DumpRequest(req, false)
-	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
+	log.Debug("dump", "req", strings.ReplaceAll(string(dump), "\r\n", " || "))
 
 	// Make sure we don't die if a panic occurs in the handler
 	defer func() {
@@ -774,7 +787,7 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 	}
 	// Issue the request to the HTTP server
 	dump, err := httputil.DumpRequest(req, false)
-	log.Debug("dump", "req", strings.Replace(string(dump), "\r\n", " || ", -1))
+	log.Debug("dump", "req", strings.ReplaceAll(string(dump), "\r\n", " || "))
 	if err != nil {
 		log.Warn("error dumping request", "err", err.Error())
 	}
@@ -788,7 +801,11 @@ func (wsc *WSConnection) finishRequest(id int16, req *http.Request) {
 		return
 	}
 	log.Info("HTTP responded", "status", resp.Status)
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error("Failed to close response body", "err", err)
+		}
+	}()
 
 	wsc.writeResponseMessage(id, resp)
 }
@@ -807,7 +824,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	// got an error, reply with a "hey, retry" to the request handler
 	if err != nil {
 		wsc.Log.Warn("WS   NextWriter", "err", err.Error())
-		wsc.ws.Close()
+		if err := wsc.ws.Close(); err != nil {
+			wsc.Log.Error("Failed to close websocket", "err", err)
+		}
 		return
 	}
 
@@ -815,7 +834,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	_, err = fmt.Fprintf(w, "%04x", id)
 	if err != nil {
 		wsc.Log.Warn("WS   cannot write request Id", "err", err.Error())
-		wsc.ws.Close()
+		if err := wsc.ws.Close(); err != nil {
+			wsc.Log.Error("Failed to close websocket", "err", err)
+		}
 		return
 	}
 
@@ -823,7 +844,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	err = resp.Write(w)
 	if err != nil {
 		wsc.Log.Warn("WS   cannot write response", "err", err.Error())
-		wsc.ws.Close()
+		if err := wsc.ws.Close(); err != nil {
+			wsc.Log.Error("Failed to close websocket", "err", err)
+		}
 		return
 	}
 
@@ -831,7 +854,9 @@ func (wsc *WSConnection) writeResponseMessage(id int16, resp *http.Response) {
 	err = w.Close()
 	if err != nil {
 		wsc.Log.Warn("WS   write-close failed", "err", err.Error())
-		wsc.ws.Close()
+		if err := wsc.ws.Close(); err != nil {
+			wsc.Log.Error("Failed to close websocket", "err", err)
+		}
 		return
 	}
 }

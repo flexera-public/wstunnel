@@ -17,10 +17,8 @@ import (
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
-var _ fmt.Formatter
-
 func httpError(log log15.Logger, w http.ResponseWriter, token, err string, code int) {
-	log.Info("ERR", "token", token, "status", code, "err", err)
+	log.Info("HTTP Error", "token", token, "error", err, "code", code)
 	http.Error(w, html.EscapeString(err), code)
 }
 
@@ -98,7 +96,9 @@ func wsSetPingHandler(t *WSTunnelServer, ws *websocket.Conn, rs *remoteServer) {
 		}
 		time.Sleep(5 * time.Second)
 		rs.log.Info("WS closing due to ping timeout", "ws", wsp(ws))
-		ws.Close()
+		if err := ws.Close(); err != nil {
+			rs.log.Error("Failed to close websocket", "err", err)
+		}
 	}
 	// timeout timer
 	timer := time.AfterFunc(t.WSTimeout, timeout)
@@ -128,7 +128,9 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		case <-ch:
 			// time to close shop
 			rs.log.Info("WS closing on signal", "ws", wsp(ws))
-			ws.Close()
+			if err := ws.Close(); err != nil {
+				rs.log.Error("Failed to close websocket", "err", err)
+			}
 			return
 		}
 		//log.Printf("WS->%s#%d start %s", req.token, req.id, req.info)
@@ -177,7 +179,9 @@ func wsWriter(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 		rs.log.Error("Error writing control message", "err", err)
 	}
 	time.Sleep(2 * time.Second)
-	ws.Close()
+	if err := ws.Close(); err != nil {
+		rs.log.Error("Failed to close websocket", "err", err)
+	}
 }
 
 // Read responses from the tunnel and fulfill pending requests
@@ -242,5 +246,7 @@ func wsReader(rs *remoteServer, ws *websocket.Conn, ch chan int) {
 	// close up shop
 	ch <- 0 // notify sender
 	time.Sleep(2 * time.Second)
-	ws.Close()
+	if err := ws.Close(); err != nil {
+		rs.log.Error("Failed to close websocket", "err", err)
+	}
 }

@@ -286,7 +286,7 @@ var _ = Describe("Testing requests", func() {
 						time.Sleep(time.Duration(10*i) * time.Millisecond)
 						w.Header().Set("Content-Type", "text/world")
 						w.WriteHeader(200)
-						if _, err := w.Write([]byte(fmt.Sprintf("/hello/%d", i))); err != nil {
+						if _, err := fmt.Fprintf(w, "/hello/%d", i); err != nil {
 							log15.Error("Error writing response", "error", err)
 						}
 					}

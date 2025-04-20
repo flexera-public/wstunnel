@@ -96,7 +96,9 @@ var _ = Describe("Testing misc requests", func() {
 		Ω(resp.StatusCode).Should(Equal(200))
 
 		// break the tunnel
-		wstuncli.conn.ws.Close()
+		if err := wstuncli.conn.ws.Close(); err != nil {
+			log15.Error("Failed to close websocket", "err", err)
+		}
 		time.Sleep(20 * time.Millisecond)
 
 		// second request

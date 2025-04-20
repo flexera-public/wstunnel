@@ -26,8 +26,6 @@ import (
 	"gopkg.in/inconshreveable/log15.v2"
 )
 
-var _ fmt.Formatter
-
 // The ReadTimeout and WriteTimeout don't actually work in Go
 // https://groups.google.com/forum/#!topic/golang-nuts/oBIh_R7-pJQ
 //const cliTout = 300 // http read/write/idle timeout
@@ -211,7 +209,9 @@ func (t *WSTunnelServer) Start(listener net.Listener) {
 
 	go func() {
 		<-t.exitChan
-		listener.Close()
+		if err := listener.Close(); err != nil {
+			t.Log.Error("Failed to close listener", "err", err)
+		}
 	}()
 }
 
@@ -224,7 +224,9 @@ func (t *WSTunnelServer) Stop() {
 
 // Handler for health check
 func checkHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "WSTUNSRV RUNNING")
+	if _, err := fmt.Fprintln(w, "WSTUNSRV RUNNING"); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
 }
 
 // Handler for stats
@@ -239,7 +241,9 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		rss = append(rss, rs)
 	}
 	// print out the number of tunnels
-	fmt.Fprintf(w, "tunnels=%d\n", len(t.serverRegistry))
+	if _, err := fmt.Fprintf(w, "tunnels=%d\n", len(t.serverRegistry)); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
 	t.serverRegistryMutex.Unlock()
 
 	// cut off here if not called from localhost
@@ -248,44 +252,67 @@ func statsHandler(t *WSTunnelServer, w http.ResponseWriter, r *http.Request) {
 		addr = r.RemoteAddr
 	}
 	if !strings.HasPrefix(addr, "127.0.0.1") {
-		fmt.Fprintln(w, "More stats available when called from localhost...")
+		if _, err := fmt.Fprintln(w, "More stats available when called from localhost..."); err != nil {
+			t.Log.Error("Failed to write response", "err", err)
+		}
 		return
 	}
 
 	reqPending := 0
 	badTunnels := 0
-	for i, t := range rss {
-		fmt.Fprintf(w, "\ntunnel%02d_token=%s\n", i, cutToken(t.token))
-		fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(t.requestSet))
-		reqPending += len(t.requestSet)
-		fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, t.remoteAddr)
-		if t.remoteName != "" {
-			fmt.Fprintf(w, "tunnel%02d_tun_dns=%s\n", i, t.remoteName)
+	for i, rs := range rss {
+		if _, err := fmt.Fprintf(w, "\ntunnel%02d_token=%s\n", i, cutToken(rs.token)); err != nil {
+			rs.log.Error("Failed to write response", "err", err)
 		}
-		if t.remoteWhois != "" {
-			fmt.Fprintf(w, "tunnel%02d_tun_whois=%s\n", i, t.remoteWhois)
+		if _, err := fmt.Fprintf(w, "tunnel%02d_req_pending=%d\n", i, len(rs.requestSet)); err != nil {
+			rs.log.Error("Failed to write response", "err", err)
 		}
-		if t.lastActivity.IsZero() {
-			fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i)
+		reqPending += len(rs.requestSet)
+		if _, err := fmt.Fprintf(w, "tunnel%02d_tun_addr=%s\n", i, rs.remoteAddr); err != nil {
+			rs.log.Error("Failed to write response", "err", err)
+		}
+		if rs.remoteName != "" {
+			if _, err := fmt.Fprintf(w, "tunnel%02d_tun_dns=%s\n", i, rs.remoteName); err != nil {
+				rs.log.Error("Failed to write response", "err", err)
+			}
+		}
+		if rs.remoteWhois != "" {
+			if _, err := fmt.Fprintf(w, "tunnel%02d_tun_whois=%s\n", i, rs.remoteWhois); err != nil {
+				rs.log.Error("Failed to write response", "err", err)
+			}
+		}
+		if rs.lastActivity.IsZero() {
+			if _, err := fmt.Fprintf(w, "tunnel%02d_idle_secs=NaN\n", i); err != nil {
+				rs.log.Error("Failed to write response", "err", err)
+			}
 			badTunnels++
 		} else {
-			fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i,
-				time.Since(t.lastActivity).Seconds())
-			if time.Since(t.lastActivity).Seconds() > 60 {
+			if _, err := fmt.Fprintf(w, "tunnel%02d_idle_secs=%.1f\n", i, time.Since(rs.lastActivity).Seconds()); err != nil {
+				rs.log.Error("Failed to write response", "err", err)
+			}
+			if time.Since(rs.lastActivity).Seconds() > 60 {
 				badTunnels++
 			}
 		}
-		if len(t.requestSet) > 0 {
-			t.requestSetMutex.Lock()
-			if r, ok := t.requestSet[t.lastID]; ok {
-				fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr)
+		if len(rs.requestSet) > 0 {
+			rs.requestSetMutex.Lock()
+			if r, ok := rs.requestSet[rs.lastID]; ok {
+				if _, err := fmt.Fprintf(w, "tunnel%02d_cli_addr=%s\n", i, r.remoteAddr); err != nil {
+					rs.log.Error("Failed to write response", "err", err)
+				}
 			}
-			t.requestSetMutex.Unlock()
+			rs.requestSetMutex.Unlock()
 		}
 	}
-	fmt.Fprintln(w, "")
-	fmt.Fprintf(w, "req_pending=%d\n", reqPending)
-	fmt.Fprintf(w, "dead_tunnels=%d\n", badTunnels)
+	if _, err := fmt.Fprintln(w, ""); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
+	if _, err := fmt.Fprintf(w, "req_pending=%d\n", reqPending); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
+	if _, err := fmt.Fprintf(w, "dead_tunnels=%d\n", badTunnels); err != nil {
+		t.Log.Error("Failed to write response", "err", err)
+	}
 }
 
 // payloadHeaderHandler handles payload requests with the tunnel token in the Host header.
@@ -529,7 +556,9 @@ func writeResponse(w http.ResponseWriter, r io.Reader) int {
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		log15.Error("Error copying response body", "err", err)
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		log15.Error("Failed to close response body", "err", err)
+	}
 	return resp.StatusCode
 }
 

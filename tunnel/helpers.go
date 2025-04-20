@@ -33,7 +33,9 @@ func writePid(file string) {
 			log15.Crit("Can't write to pidfile", "file", file, "err", err.Error())
 			os.Exit(1)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			log15.Error("Failed to close pidfile", "err", err)
+		}
 	}
 }
 
